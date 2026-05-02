@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Document": {
+      "title": "Document",
+      "description": "A document converted from OCR or created by the user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "originalFileName": { "type": "string" },
+        "status": { "type": "string", "enum": ["processing", "completed", "failed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "content", "createdAt", "updatedAt"]
+    },
+    "Version": {
+      "title": "Version",
+      "description": "A historical version of a document.",
+      "type": "object",
+      "properties": {
+        "documentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "note": { "type": "string" }
+      },
+      "required": ["documentId", "userId", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/documents/{documentId}": {
+      "schema": "Document",
+      "description": "Collection of documents."
+    },
+    "/documents/{documentId}/versions/{versionId}": {
+      "schema": "Version",
+      "description": "Sub-collection of document versions for history."
+    }
+  }
+}

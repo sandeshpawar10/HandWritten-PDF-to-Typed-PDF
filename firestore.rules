@@ -1,0 +1,77 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidDocument(data) {
+      return data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.title is string &&
+             data.title.size() <= 500 &&
+             data.content is string &&
+             data.content.size() <= 1048576 && // 1MB content limit
+             data.status in ['processing', 'completed', 'failed'];
+    }
+
+    match /documents/{documentId} {
+      allow get: if isSignedIn() && isOwner(existing().userId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && 
+                      isValidId(documentId) &&
+                      isValidDocument(incoming()) &&
+                      incoming().createdAt == request.time &&
+                      incoming().updatedAt == request.time;
+                      
+      allow update: if isSignedIn() && 
+                      isOwner(existing().userId) &&
+                      isValidDocument(incoming()) &&
+                      incoming().userId == existing().userId &&
+                      incoming().createdAt == existing().createdAt &&
+                      incoming().updatedAt == request.time;
+                      
+      allow delete: if isSignedIn() && isOwner(existing().userId);
+
+      match /versions/{versionId} {
+        function isValidVersion(data) {
+          return data.documentId == documentId &&
+                 data.userId == request.auth.uid &&
+                 data.content is string &&
+                 data.content.size() <= 1048576;
+        }
+
+        allow get: if isSignedIn() && isOwner(existing().userId);
+        allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+        
+        allow create: if isSignedIn() && 
+                        isValidId(versionId) &&
+                        isValidVersion(incoming()) &&
+                        incoming().createdAt == request.time;
+      }
+    }
+  }
+}

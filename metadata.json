@@ -1,0 +1,6 @@
+{
+  "name": "Typed Document",
+  "description": "Convert handwritten PDFs into editable typed documents with batch processing, multi-format export, and version history using Gemini AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
