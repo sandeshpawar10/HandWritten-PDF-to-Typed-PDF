@@ -151,42 +151,44 @@ body::after {
   color: #1a1a2e;
   font-family: "Inter", system-ui, sans-serif;
   font-size: 15px;
-  line-height: 1.85;
+  line-height: 1.8;
   word-wrap: break-word;
 }
 
 .md-preview h1.md-h1 {
   font-family: "Syne", sans-serif;
-  font-size: 2em;
+  font-size: 2.6em;
   font-weight: 800;
   color: #0f0f23;
-  margin: 0 0 0.6em 0;
-  padding-bottom: 0.4em;
-  border-bottom: 2px solid #e5e7eb;
-  line-height: 1.2;
+  margin: 0 0 0.8em 0;
+  padding-bottom: 0.2em;
+  border-bottom: 3px solid #e5e7eb;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 .md-preview h2.md-h2 {
   font-family: "Syne", sans-serif;
-  font-size: 1.55em;
+  font-size: 1.7em;
   font-weight: 700;
   color: #1a1a2e;
-  margin: 1.4em 0 0.5em 0;
+  margin: 1.5em 0 0.6em 0;
   padding-bottom: 0.3em;
   border-bottom: 1px solid #f0f0f0;
   line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 .md-preview h3.md-h3 {
-  font-size: 1.3em;
+  font-size: 1.4em;
   font-weight: 700;
   color: #1a1a2e;
-  margin: 1.2em 0 0.4em 0;
+  margin: 1.3em 0 0.5em 0;
 }
-.md-preview h4.md-h4 { font-size: 1.1em; font-weight: 600; color: #333; margin: 1em 0 0.3em 0; }
-.md-preview h5.md-h5 { font-size: 1em; font-weight: 600; color: #555; margin: 0.8em 0 0.3em 0; }
-.md-preview h6.md-h6 { font-size: 0.9em; font-weight: 600; color: #777; margin: 0.8em 0 0.3em 0; }
+.md-preview h4.md-h4 { font-size: 1.15em; font-weight: 600; color: #333; margin: 1.1em 0 0.4em 0; }
+.md-preview h5.md-h5 { font-size: 1.05em; font-weight: 600; color: #555; margin: 0.9em 0 0.4em 0; }
+.md-preview h6.md-h6 { font-size: 0.95em; font-weight: 600; color: #777; margin: 0.9em 0 0.4em 0; }
 
 .md-preview p.md-paragraph {
-  margin: 0 0 0.85em 0;
+  margin: 0 0 1.2em 0;
 }
 
 .md-preview strong { font-weight: 700; color: #0f0f23; }

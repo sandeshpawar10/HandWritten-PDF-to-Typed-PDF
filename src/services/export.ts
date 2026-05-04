@@ -5,7 +5,7 @@ import {
   BorderStyle, AlignmentType
 } from 'docx';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 // ── Markdown parser helpers ──
 
@@ -40,6 +40,36 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
       continue;
     }
 
+    // Math blocks $$
+    if (trimmed === '$$') {
+      const mathLines: string[] = [];
+      i++;
+      while (i < lines.length && lines[i].trim() !== '$$') {
+        mathLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing $$
+      blocks.push({ type: 'code', lines: mathLines });
+      continue;
+    }
+
+    // Raw LaTeX begin{...} blocks
+    if (trimmed.startsWith('\\begin{')) {
+      const mathLines = [line];
+      const beginType = trimmed.match(/^\\begin\{([^}]+)\}/)?.[1];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith(`\\end{${beginType}}`)) {
+        mathLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) {
+        mathLines.push(lines[i]);
+        i++;
+      }
+      blocks.push({ type: 'code', lines: mathLines });
+      continue;
+    }
+
     // Page separator
     if (trimmed.match(/^--- Page \d+ ---$/)) {
       blocks.push({ type: 'separator', text: trimmed });
@@ -71,7 +101,7 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
     // Headings
     const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
-      blocks.push({ type: 'heading', level: headingMatch[1].length, text: stripInline(headingMatch[2]) });
+      blocks.push({ type: 'heading', level: headingMatch[1].length, text: headingMatch[2] });
       i++;
       continue;
     }
@@ -83,20 +113,20 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
         qLines.push(lines[i].trim().replace(/^>\s?/, ''));
         i++;
       }
-      blocks.push({ type: 'blockquote', text: qLines.map(stripInline).join('\n') });
+      blocks.push({ type: 'blockquote', text: qLines.join('\n') });
       continue;
     }
 
     // Unordered list
     if (trimmed.match(/^[-*+]\s+/)) {
-      blocks.push({ type: 'list-item', ordered: false, text: stripInline(trimmed.replace(/^[-*+]\s+/, '')) });
+      blocks.push({ type: 'list-item', ordered: false, text: trimmed.replace(/^[-*+]\s+/, '') });
       i++;
       continue;
     }
 
     // Ordered list
     if (trimmed.match(/^\d+\.\s+/)) {
-      blocks.push({ type: 'list-item', ordered: true, text: stripInline(trimmed.replace(/^\d+\.\s+/, '')) });
+      blocks.push({ type: 'list-item', ordered: true, text: trimmed.replace(/^\d+\.\s+/, '') });
       i++;
       continue;
     }
@@ -109,7 +139,7 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
     }
 
     // Regular paragraph
-    blocks.push({ type: 'paragraph', text: stripInline(trimmed) });
+    blocks.push({ type: 'paragraph', text: trimmed });
     i++;
   }
 
@@ -157,6 +187,13 @@ export async function exportToTxt(title: string, content: string) {
 export async function exportToDocx(title: string, content: string) {
   const blocks = parseMarkdownBlocks(content);
   const children: (Paragraph | Table)[] = [];
+
+  // Add document title
+  children.push(new Paragraph({
+    children: [new TextRun({ text: title, bold: true, size: 48, color: '000000' })],
+    heading: HeadingLevel.TITLE,
+    spacing: { after: 400 },
+  }));
 
   const headingMap: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
     1: HeadingLevel.HEADING_1, 2: HeadingLevel.HEADING_2, 3: HeadingLevel.HEADING_3,
@@ -229,10 +266,7 @@ export async function exportToDocx(title: string, content: string) {
         break;
 
       case 'separator':
-        children.push(new Paragraph({
-          children: [new TextRun({ text: block.text || '', color: '999999', size: 18 })],
-          spacing: { before: 400, after: 200 },
-        }));
+        // Skip separators in clean export
         break;
 
       case 'paragraph':
@@ -302,7 +336,7 @@ export async function exportToPdf(title: string, content: string) {
         if (block.rows && block.rows.length > 0) {
           const head = [block.rows[0]];
           const body = block.rows.slice(1);
-          (doc as any).autoTable({
+          autoTable(doc as any, {
             startY: y,
             head,
             body,
@@ -319,15 +353,49 @@ export async function exportToPdf(title: string, content: string) {
       case 'list-item': {
         checkPage(lh);
         const prefix = block.ordered ? '•  ' : '•  ';
-        const wrapped = doc.splitTextToSize(prefix + (block.text || ''), usable - 6) as string[];
-        for (const wl of wrapped) { checkPage(lh); doc.text(wl, mL + 4, y); y += lh; }
+        const startX = mL + 4;
+        
+        // Simple inline parser for PDF
+        const renderPdfInline = (rawText: string, indentX: number, initialPrefix: string = '') => {
+          let cx = indentX;
+          let isFirstWord = true;
+          const tokens = rawText.split(/(\*\*[^*]+\*\*)/g);
+          
+          for (const token of tokens) {
+            if (!token) continue;
+            const isBold = token.startsWith('**') && token.endsWith('**');
+            const cleanText = isBold ? token.slice(2, -2) : token.replace(/\*/g, '');
+            doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+            
+            const words = cleanText.split(/\s+/);
+            for (let wIdx = 0; wIdx < words.length; wIdx++) {
+              let word = words[wIdx];
+              if (!word) continue;
+              if (isFirstWord && initialPrefix) {
+                word = initialPrefix + word;
+                isFirstWord = false;
+              }
+              const wordWidth = doc.getTextWidth(word + ' ');
+              if (cx + wordWidth > pW - mR && cx > indentX) {
+                y += lh;
+                checkPage(lh);
+                cx = indentX;
+              }
+              doc.text(word, cx, y);
+              cx += wordWidth;
+            }
+          }
+          y += lh;
+        };
+
+        renderPdfInline(block.text || '', startX, prefix);
         break;
       }
       case 'blockquote': {
         checkPage(lh);
         doc.setTextColor(120, 120, 120);
         doc.setFont('helvetica', 'italic');
-        const wrapped = doc.splitTextToSize(block.text || '', usable - 15) as string[];
+        const wrapped = doc.splitTextToSize(block.text?.replace(/\*/g, '') || '', usable - 15) as string[];
         doc.setDrawColor(200, 200, 200);
         doc.setLineWidth(0.8);
         const startY = y;
@@ -354,20 +422,35 @@ export async function exportToPdf(title: string, content: string) {
         break;
       }
       case 'separator': {
-        checkPage(lh + 4);
-        doc.setDrawColor(200, 200, 200);
-        doc.line(mL, y + 2, pW - mR, y + 2);
-        doc.setTextColor(150, 150, 150);
-        doc.setFontSize(9);
-        doc.text(block.text || '', mL, y + 6);
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(fs);
-        y += lh + 4;
+        // Skip separator in PDF
         break;
       }
       case 'paragraph': {
-        const wrapped = doc.splitTextToSize(block.text || '', usable) as string[];
-        for (const wl of wrapped) { checkPage(lh); doc.text(wl, mL, y); y += lh; }
+        const renderPdfInline = (rawText: string, indentX: number) => {
+          let cx = indentX;
+          const tokens = rawText.split(/(\*\*[^*]+\*\*)/g);
+          for (const token of tokens) {
+            if (!token) continue;
+            const isBold = token.startsWith('**') && token.endsWith('**');
+            const cleanText = isBold ? token.slice(2, -2) : token.replace(/\*/g, '');
+            doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+            const words = cleanText.split(/\s+/);
+            for (const word of words) {
+              if (!word) continue;
+              const wordWidth = doc.getTextWidth(word + ' ');
+              if (cx + wordWidth > pW - mR && cx > indentX) {
+                y += lh;
+                checkPage(lh);
+                cx = indentX;
+              }
+              doc.text(word, cx, y);
+              cx += wordWidth;
+            }
+          }
+          y += lh;
+        };
+
+        renderPdfInline(block.text || '', mL);
         y += 2;
         break;
       }

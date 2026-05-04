@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import katex from 'katex';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -10,6 +11,8 @@ function parseMarkdown(md: string): string {
   const html: string[] = [];
   let i = 0;
   let inCodeBlock = false;
+  let inMathBlock = false;
+  let mathContent: string[] = [];
   let codeContent: string[] = [];
   let inList: 'ul' | 'ol' | null = null;
 
@@ -21,14 +24,26 @@ function parseMarkdown(md: string): string {
   }
 
   function inlineFormat(text: string): string {
+    text = escapeHtml(text);
     // Code spans
     text = text.replace(/`([^`]+)`/g, '<code class="md-code-inline">$1</code>');
+    
+    // Inline Math
+    text = text.replace(/\$([^$]+)\$/g, (match, mathStr) => {
+      const unescaped = mathStr.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+      try {
+        return katex.renderToString(unescaped, { throwOnError: false, displayMode: false });
+      } catch(e) {
+        return `<code>${mathStr}</code>`;
+      }
+    });
+
     // Bold
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__(.*?)__/g, '<strong>$1</strong>');
     // Italic
-    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    text = text.replace(/_([^_]+)_/g, '<em>$1</em>');
+    text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    text = text.replace(/_(.*?)_/g, '<em>$1</em>');
     return text;
   }
 
@@ -52,6 +67,53 @@ function parseMarkdown(md: string): string {
     if (inCodeBlock) {
       codeContent.push(escapeHtml(line));
       i++;
+      continue;
+    }
+
+    // Math blocks $$
+    if (trimmed === '$$') {
+      if (inMathBlock) {
+        try {
+          const htmlStr = katex.renderToString(mathContent.join('\n'), { displayMode: true, throwOnError: false });
+          html.push(`<div class="md-math-block overflow-x-auto py-2">${htmlStr}</div>`);
+        } catch(e) {
+          html.push(`<div class="md-math-error text-red-500">${escapeHtml(mathContent.join('\n'))}</div>`);
+        }
+        mathContent = [];
+        inMathBlock = false;
+      } else {
+        closeList();
+        inMathBlock = true;
+      }
+      i++;
+      continue;
+    }
+    if (inMathBlock) {
+      mathContent.push(line);
+      i++;
+      continue;
+    }
+
+    // Raw LaTeX begin{...} blocks
+    if (trimmed.startsWith('\\begin{')) {
+      closeList();
+      const mathLines = [line];
+      const beginType = trimmed.match(/^\\begin\{([^}]+)\}/)?.[1];
+      i++;
+      while(i < lines.length && !lines[i].trim().startsWith(`\\end{${beginType}}`)) {
+        mathLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) {
+        mathLines.push(lines[i]);
+        i++;
+      }
+      try {
+        const htmlStr = katex.renderToString(mathLines.join('\n'), { displayMode: true, throwOnError: false });
+        html.push(`<div class="md-math-block overflow-x-auto py-2">${htmlStr}</div>`);
+      } catch(e) {
+        html.push(`<div class="md-math-error text-red-500">${escapeHtml(mathLines.join('\n'))}</div>`);
+      }
       continue;
     }
 
@@ -210,10 +272,18 @@ function parseTable(tableLines: string[]): string {
 function inlineFormatStatic(text: string): string {
   text = escapeHtml(text);
   text = text.replace(/`([^`]+)`/g, '<code class="md-code-inline">$1</code>');
-  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-  text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  text = text.replace(/_([^_]+)_/g, '<em>$1</em>');
+  text = text.replace(/\$([^$]+)\$/g, (match, mathStr) => {
+    const unescaped = mathStr.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+    try {
+      return katex.renderToString(unescaped, { throwOnError: false, displayMode: false });
+    } catch(e) {
+      return `<code>${mathStr}</code>`;
+    }
+  });
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/__(.*?)__/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  text = text.replace(/_(.*?)_/g, '<em>$1</em>');
   return text;
 }
 

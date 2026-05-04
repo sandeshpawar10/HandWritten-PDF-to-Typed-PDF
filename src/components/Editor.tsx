@@ -103,9 +103,9 @@ export function Editor({ document, onBack, versions }: EditorProps) {
         </header>
 
         {/* Document area */}
-        <div className="flex-1 overflow-y-auto bg-[#0a0a0f] p-4 sm:p-8 flex justify-center">
+        <div className="flex-1 overflow-y-auto bg-[#0a0a0f] p-4 sm:p-8 flex justify-center items-start">
           <motion.div initial={{y:20,opacity:0}} animate={{y:0,opacity:1}}
-            className="w-full max-w-[780px] min-h-[1056px] rounded-2xl shadow-2xl shadow-black/80 relative" style={{background:'#fafaf9'}}>
+            className="w-full h-fit max-w-[780px] min-h-[1056px] rounded-2xl shadow-2xl shadow-black/80 relative" style={{background:'#fafaf9'}}>
             <div className="absolute top-6 right-8 text-[10px] text-gray-300 font-mono select-none">TYPED DOCUMENT</div>
             <div className="absolute top-0 left-0 w-full h-1 rounded-t-2xl" style={{background:'linear-gradient(90deg,#6ee7f7,#a78bfa,#34d399)'}} />
             <AnimatePresence mode="wait">
@@ -117,6 +117,9 @@ export function Editor({ document, onBack, versions }: EditorProps) {
                 </motion.div>
               ) : (
                 <motion.div key="preview" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-10 sm:p-16">
+                  <div className="mb-6 pb-4 border-b border-gray-200">
+                    <h1 className="text-[2.6em] font-extrabold text-[#0f0f23] leading-[1.15] tracking-[-0.02em]" style={{fontFamily:'"Syne", sans-serif'}}>{document.title}</h1>
+                  </div>
                   {content.trim() ? <MarkdownPreview content={content} /> : <p className="text-gray-400 italic text-center py-20">No content yet.</p>}
                 </motion.div>
               )}
