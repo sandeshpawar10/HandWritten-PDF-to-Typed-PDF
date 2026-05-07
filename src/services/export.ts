@@ -6,6 +6,7 @@ import {
 } from 'docx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 
 // ── Markdown parser helpers ──
 
@@ -295,177 +296,16 @@ export async function exportToDocx(title: string, content: string) {
   saveAs(blob, `${title}.docx`);
 }
 
-export async function exportToPdf(title: string, content: string) {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const blocks = parseMarkdownBlocks(content);
-
-  const mL = 15, mR = 15, mT = 20, mB = 20;
-  const pW = doc.internal.pageSize.getWidth();
-  const pH = doc.internal.pageSize.getHeight();
-  const usable = pW - mL - mR;
-  const lh = 7, fs = 11;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(title, mL, mT);
-  doc.setFontSize(fs);
-  doc.setFont('helvetica', 'normal');
-
-  let y = mT + 12;
-
-  function checkPage(needed: number) {
-    if (y + needed > pH - mB) { doc.addPage(); y = mT; }
-  }
-
-  for (const block of blocks) {
-    switch (block.type) {
-      case 'heading': {
-        const sizes: Record<number, number> = { 1: 18, 2: 15, 3: 13, 4: 12, 5: 11, 6: 11 };
-        const sz = sizes[block.level || 1] || 12;
-        checkPage(sz);
-        doc.setFontSize(sz);
-        doc.setFont('helvetica', 'bold');
-        doc.text(block.text || '', mL, y);
-        doc.setFontSize(fs);
-        doc.setFont('helvetica', 'normal');
-        y += sz * 0.6 + 4;
-        break;
-      }
-      case 'table': {
-        if (block.rows && block.rows.length > 0) {
-          const head = [block.rows[0]];
-          const body = block.rows.slice(1);
-          autoTable(doc as any, {
-            startY: y,
-            head,
-            body,
-            margin: { left: mL, right: mR },
-            styles: { fontSize: 9, cellPadding: 2.5, lineColor: [200, 200, 200], lineWidth: 0.3 },
-            headStyles: { fillColor: [232, 237, 245], textColor: [30, 30, 30], fontStyle: 'bold' },
-            alternateRowStyles: { fillColor: [250, 250, 249] },
-            theme: 'grid',
-          });
-          y = (doc as any).lastAutoTable.finalY + 6;
-        }
-        break;
-      }
-      case 'list-item': {
-        checkPage(lh);
-        const prefix = block.ordered ? '•  ' : '•  ';
-        const startX = mL + 4;
-        
-        // Simple inline parser for PDF
-        const renderPdfInline = (rawText: string, indentX: number, initialPrefix: string = '') => {
-          let cx = indentX;
-          let isFirstWord = true;
-          const tokens = rawText.split(/(\*\*[^*]+\*\*)/g);
-          
-          for (const token of tokens) {
-            if (!token) continue;
-            const isBold = token.startsWith('**') && token.endsWith('**');
-            const cleanText = isBold ? token.slice(2, -2) : token.replace(/\*/g, '');
-            doc.setFont('helvetica', isBold ? 'bold' : 'normal');
-            
-            const words = cleanText.split(/\s+/);
-            for (let wIdx = 0; wIdx < words.length; wIdx++) {
-              let word = words[wIdx];
-              if (!word) continue;
-              if (isFirstWord && initialPrefix) {
-                word = initialPrefix + word;
-                isFirstWord = false;
-              }
-              const wordWidth = doc.getTextWidth(word + ' ');
-              if (cx + wordWidth > pW - mR && cx > indentX) {
-                y += lh;
-                checkPage(lh);
-                cx = indentX;
-              }
-              doc.text(word, cx, y);
-              cx += wordWidth;
-            }
-          }
-          y += lh;
-        };
-
-        renderPdfInline(block.text || '', startX, prefix);
-        break;
-      }
-      case 'blockquote': {
-        checkPage(lh);
-        doc.setTextColor(120, 120, 120);
-        doc.setFont('helvetica', 'italic');
-        const wrapped = doc.splitTextToSize(block.text?.replace(/\*/g, '') || '', usable - 15) as string[];
-        doc.setDrawColor(200, 200, 200);
-        doc.setLineWidth(0.8);
-        const startY = y;
-        for (const wl of wrapped) { checkPage(lh); doc.text(wl, mL + 8, y); y += lh; }
-        doc.line(mL + 3, startY - 4, mL + 3, y - 2);
-        doc.setTextColor(0, 0, 0);
-        doc.setFont('helvetica', 'normal');
-        y += 3;
-        break;
-      }
-      case 'code': {
-        doc.setFont('courier', 'normal');
-        doc.setFontSize(9);
-        for (const cl of block.lines || []) {
-          checkPage(6);
-          doc.setFillColor(245, 245, 245);
-          doc.rect(mL, y - 4, usable, 6, 'F');
-          doc.text(cl, mL + 3, y);
-          y += 6;
-        }
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(fs);
-        y += 3;
-        break;
-      }
-      case 'separator': {
-        // Skip separator in PDF
-        break;
-      }
-      case 'paragraph': {
-        const renderPdfInline = (rawText: string, indentX: number) => {
-          let cx = indentX;
-          const tokens = rawText.split(/(\*\*[^*]+\*\*)/g);
-          for (const token of tokens) {
-            if (!token) continue;
-            const isBold = token.startsWith('**') && token.endsWith('**');
-            const cleanText = isBold ? token.slice(2, -2) : token.replace(/\*/g, '');
-            doc.setFont('helvetica', isBold ? 'bold' : 'normal');
-            const words = cleanText.split(/\s+/);
-            for (const word of words) {
-              if (!word) continue;
-              const wordWidth = doc.getTextWidth(word + ' ');
-              if (cx + wordWidth > pW - mR && cx > indentX) {
-                y += lh;
-                checkPage(lh);
-                cx = indentX;
-              }
-              doc.text(word, cx, y);
-              cx += wordWidth;
-            }
-          }
-          y += lh;
-        };
-
-        renderPdfInline(block.text || '', mL);
-        y += 2;
-        break;
-      }
-      case 'hr': {
-        checkPage(6);
-        doc.setDrawColor(200, 200, 200);
-        doc.line(mL, y, pW - mR, y);
-        y += 6;
-        break;
-      }
-      default:
-        y += 3;
-        break;
-    }
-  }
-
-  doc.save(`${title}.pdf`);
+export async function exportToPdf(title: string, _content: string) {
+  // Use the native browser print engine for perfect Katex rendering and infinite document height support
+  const originalTitle = document.title;
+  document.title = title;
+  
+  setTimeout(() => {
+    window.print();
+    // Restore the original app title after the print dialog opens
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
+  }, 100);
 }
