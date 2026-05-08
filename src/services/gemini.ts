@@ -533,194 +533,424 @@
  * Get a free API key at: https://console.mistral.ai/api-keys
  */
 
-const MISTRAL_OCR_URL = "https://api.mistral.ai/v1/ocr";
-const OCR_MODEL = "mistral-ocr-latest";
+// const MISTRAL_OCR_URL = "https://api.mistral.ai/v1/ocr";
+// const OCR_MODEL = "mistral-ocr-latest";
 
-const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024; // 50 MB
+// const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024; // 50 MB
+
+// // ─────────────────────────────────────────────
+// //  API key
+// // ─────────────────────────────────────────────
+// function getApiKey(): string {
+//   const customKey =
+//     typeof window !== "undefined"
+//       ? localStorage.getItem("TYPEDDOC_MISTRAL_API_KEY")
+//       : null;
+
+//   const envKey =
+//     (typeof process !== "undefined" && (process as any).env?.MISTRAL_API_KEY) ||
+//     (import.meta as any).env?.VITE_MISTRAL_API_KEY ||
+//     null;
+
+//   const apiKey = customKey || envKey;
+
+//   if (!apiKey) {
+//     throw new Error(
+//       "NO_API_KEY: No Mistral API key found. Go to Settings and add your key from https://console.mistral.ai/api-keys"
+//     );
+//   }
+
+//   return apiKey;
+// }
+
+// // ─────────────────────────────────────────────
+// //  Retry / back-off
+// // ─────────────────────────────────────────────
+// const MAX_RETRIES = 4;
+// const BASE_DELAY_MS = 5_000;
+// const MAX_DELAY_MS = 60_000;
+
+// function sleep(ms: number): Promise<void> {
+//   return new Promise(resolve => setTimeout(resolve, ms));
+// }
+
+// function isRateLimitError(status: number, body: any): boolean {
+//   if (status === 429) return true;
+//   const msg = (body?.message || body?.error?.message || '').toLowerCase();
+//   return msg.includes('rate limit') || msg.includes('quota') || msg.includes('too many');
+// }
+
+// function getRetryDelay(headers: Headers, attempt: number): number {
+//   const retryAfter = headers.get('retry-after');
+//   if (retryAfter) {
+//     const secs = parseInt(retryAfter, 10);
+//     if (!isNaN(secs)) return Math.min(secs * 1000 + 500, MAX_DELAY_MS);
+//   }
+//   return Math.min(BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000, MAX_DELAY_MS);
+// }
+
+// // ─────────────────────────────────────────────
+// //  Core OCR call — wraps Mistral's /v1/ocr endpoint
+// // ─────────────────────────────────────────────
+// async function callMistralOCR(
+//   document: { type: string; [key: string]: any },
+//   label: string,
+//   onProgress?: (s: string) => void
+// ): Promise<string> {
+//   let lastError: any;
+
+//   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+//     const response = await fetch(MISTRAL_OCR_URL, {
+//       method: "POST",
+//       headers: {
+//         "Content-Type": "application/json",
+//         "Authorization": `Bearer ${getApiKey()}`,
+//       },
+//       body: JSON.stringify({
+//         model: OCR_MODEL,
+//         document,
+//       }),
+//     });
+
+//     const body = await response.json();
+
+//     if (response.ok) {
+//       // Mistral OCR returns an array of pages, each with a `markdown` field
+//       // We join them all together — no need to manually handle pages!
+//       const pages: Array<{ markdown: string }> = body.pages ?? [];
+//       return pages
+//         .map((p, i) => `--- Page ${i + 1} ---\n\n${p.markdown}`)
+//         .join("\n\n")
+//         .trim();
+//     }
+
+//     const errMsg = body?.message || body?.error?.message || `HTTP ${response.status}`;
+
+//     if (isRateLimitError(response.status, body) && attempt < MAX_RETRIES) {
+//       const delay = getRetryDelay(response.headers, attempt);
+//       const delaySec = (delay / 1000).toFixed(0);
+//       console.warn(`[TypedDoc] Rate limited on "${label}" (attempt ${attempt + 1}). Waiting ${delaySec}s…`);
+//       onProgress?.(`Rate limited. Waiting ${delaySec}s before retry ${attempt + 1}/${MAX_RETRIES}…`);
+//       await sleep(delay);
+//       continue;
+//     }
+
+//     if (response.status === 401) {
+//       throw new Error("INVALID_API_KEY: Your Mistral API key is invalid or expired. Check Settings.");
+//     }
+
+//     if (response.status === 402 || errMsg.toLowerCase().includes('billing') || errMsg.toLowerCase().includes('quota')) {
+//       throw new Error(`QUOTA: Mistral quota exceeded. Top up credits at https://console.mistral.ai — ${errMsg}`);
+//     }
+
+//     lastError = new Error(errMsg);
+//     throw lastError;
+//   }
+
+//   throw lastError ?? new Error("Max retries exceeded");
+// }
+
+// // ─────────────────────────────────────────────
+// //  Public API  (same signature — no other files need changing)
+// // ─────────────────────────────────────────────
+// export async function convertHandwritingToText(
+//   file: File,
+//   onProgress?: (status: string) => void
+// ): Promise<string> {
+//   if (file.size > MAX_RECOMMENDED_SIZE) {
+//     console.warn(`[TypedDoc] File is ${(file.size / 1024 / 1024).toFixed(1)} MB — may be slow.`);
+//   }
+
+//   const isPdf = file.type === "application/pdf";
+//   return isPdf
+//     ? convertPdfWithMistralOCR(file, onProgress)
+//     : convertImageWithMistralOCR(file, onProgress);
+// }
+
+// // ─────────────────────────────────────────────
+// //  PDF — entire file in ONE API call 🎉
+// //  Mistral OCR handles all pages server-side.
+// //  No per-page splitting, no delays between pages.
+// // ─────────────────────────────────────────────
+// async function convertPdfWithMistralOCR(
+//   file: File,
+//   onProgress?: (status: string) => void
+// ): Promise<string> {
+//   onProgress?.('Reading PDF…');
+//   const base64Data = await fileToBase64(file);
+
+//   onProgress?.('Sending to Mistral OCR… (processing all pages at once)');
+
+//   return callMistralOCR(
+//     {
+//       type: "document_url",
+//       document_url: `data:application/pdf;base64,${base64Data}`,
+//     },
+//     file.name,
+//     onProgress
+//   );
+// }
+
+// // ─────────────────────────────────────────────
+// //  Image (JPG / PNG / WEBP)
+// // ─────────────────────────────────────────────
+// async function convertImageWithMistralOCR(
+//   file: File,
+//   onProgress?: (status: string) => void
+// ): Promise<string> {
+//   onProgress?.('Reading image…');
+//   const base64Data = await fileToBase64(file);
+
+//   onProgress?.('Sending to Mistral OCR…');
+
+//   return callMistralOCR(
+//     {
+//       type: "image_url",
+//       image_url: `data:${file.type};base64,${base64Data}`,
+//     },
+//     file.name,
+//     onProgress
+//   );
+// }
+
+// // ─────────────────────────────────────────────
+// //  Utility
+// // ─────────────────────────────────────────────
+// function fileToBase64(file: File): Promise<string> {
+//   return new Promise((resolve, reject) => {
+//     const reader = new FileReader();
+//     reader.readAsDataURL(file);
+//     reader.onload = () => resolve((reader.result as string).split(",")[1]);
+//     reader.onerror = error => reject(error);
+//   });
+// }
+
+
+
+
+
+
+
+
+/**
+ * mistral-ocr.ts  (kept as gemini.ts so no import paths need changing)
+ * Uses Mistral OCR 3 + Mistral Chat to produce properly formatted Markdown
+ * with real LaTeX math and smart bold/heading detection.
+ */
+
+const MISTRAL_OCR_URL  = "https://api.mistral.ai/v1/ocr";
+const MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions";
+const OCR_MODEL        = "mistral-ocr-latest";
+const CHAT_MODEL       = "mistral-medium-latest";   // used for post-processing
+
+const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024;
 
 // ─────────────────────────────────────────────
 //  API key
 // ─────────────────────────────────────────────
 function getApiKey(): string {
-  const customKey =
-    typeof window !== "undefined"
-      ? localStorage.getItem("TYPEDDOC_MISTRAL_API_KEY")
-      : null;
-
-  const envKey =
+  const key =
+    (typeof window !== "undefined" && localStorage.getItem("TYPEDDOC_MISTRAL_API_KEY")) ||
     (typeof process !== "undefined" && (process as any).env?.MISTRAL_API_KEY) ||
     (import.meta as any).env?.VITE_MISTRAL_API_KEY ||
     null;
 
-  const apiKey = customKey || envKey;
-
-  if (!apiKey) {
-    throw new Error(
-      "NO_API_KEY: No Mistral API key found. Go to Settings and add your key from https://console.mistral.ai/api-keys"
-    );
-  }
-
-  return apiKey;
+  if (!key) throw new Error(
+    "NO_API_KEY: No Mistral API key found. Go to Settings and add your key from https://console.mistral.ai/api-keys"
+  );
+  return key;
 }
 
 // ─────────────────────────────────────────────
-//  Retry / back-off
+//  Retry helpers
 // ─────────────────────────────────────────────
-const MAX_RETRIES = 4;
+const MAX_RETRIES   = 4;
 const BASE_DELAY_MS = 5_000;
-const MAX_DELAY_MS = 60_000;
+const MAX_DELAY_MS  = 60_000;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-function isRateLimitError(status: number, body: any): boolean {
+function isRateLimit(status: number, body: any) {
   if (status === 429) return true;
-  const msg = (body?.message || body?.error?.message || '').toLowerCase();
-  return msg.includes('rate limit') || msg.includes('quota') || msg.includes('too many');
+  const msg = (body?.message || body?.error?.message || "").toLowerCase();
+  return msg.includes("rate limit") || msg.includes("quota") || msg.includes("too many");
 }
 
-function getRetryDelay(headers: Headers, attempt: number): number {
-  const retryAfter = headers.get('retry-after');
-  if (retryAfter) {
-    const secs = parseInt(retryAfter, 10);
-    if (!isNaN(secs)) return Math.min(secs * 1000 + 500, MAX_DELAY_MS);
+function retryDelay(headers: Headers, attempt: number) {
+  const ra = headers.get("retry-after");
+  if (ra) { const s = parseInt(ra, 10); if (!isNaN(s)) return Math.min(s * 1000 + 500, MAX_DELAY_MS); }
+  return Math.min(BASE_DELAY_MS * 2 ** attempt + Math.random() * 1000, MAX_DELAY_MS);
+}
+
+async function apiFetch(
+  url: string, body: object,
+  label: string, onProgress?: (s: string) => void
+): Promise<any> {
+  let lastErr: any;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getApiKey()}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) return data;
+
+    const msg = data?.message || data?.error?.message || `HTTP ${res.status}`;
+    if (isRateLimit(res.status, data) && attempt < MAX_RETRIES) {
+      const d = retryDelay(res.headers, attempt);
+      onProgress?.(`Rate limited – waiting ${(d/1000).toFixed(0)}s… (retry ${attempt+1}/${MAX_RETRIES})`);
+      await sleep(d); continue;
+    }
+    if (res.status === 401) throw new Error("INVALID_API_KEY: Mistral key invalid. Check Settings.");
+    if (res.status === 402 || msg.includes("billing") || msg.includes("quota"))
+      throw new Error(`QUOTA: ${msg}`);
+    lastErr = new Error(msg);
+    throw lastErr;
   }
-  return Math.min(BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000, MAX_DELAY_MS);
+  throw lastErr ?? new Error("Max retries exceeded");
 }
 
 // ─────────────────────────────────────────────
-//  Core OCR call — wraps Mistral's /v1/ocr endpoint
+//  Step 1 — Raw OCR via Mistral OCR endpoint
 // ─────────────────────────────────────────────
-async function callMistralOCR(
-  document: { type: string; [key: string]: any },
+async function runOCR(
+  document: { type: string; [k: string]: any },
   label: string,
   onProgress?: (s: string) => void
 ): Promise<string> {
-  let lastError: any;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const response = await fetch(MISTRAL_OCR_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${getApiKey()}`,
-      },
-      body: JSON.stringify({
-        model: OCR_MODEL,
-        document,
-      }),
-    });
-
-    const body = await response.json();
-
-    if (response.ok) {
-      // Mistral OCR returns an array of pages, each with a `markdown` field
-      // We join them all together — no need to manually handle pages!
-      const pages: Array<{ markdown: string }> = body.pages ?? [];
-      return pages
-        .map((p, i) => `--- Page ${i + 1} ---\n\n${p.markdown}`)
-        .join("\n\n")
-        .trim();
-    }
-
-    const errMsg = body?.message || body?.error?.message || `HTTP ${response.status}`;
-
-    if (isRateLimitError(response.status, body) && attempt < MAX_RETRIES) {
-      const delay = getRetryDelay(response.headers, attempt);
-      const delaySec = (delay / 1000).toFixed(0);
-      console.warn(`[TypedDoc] Rate limited on "${label}" (attempt ${attempt + 1}). Waiting ${delaySec}s…`);
-      onProgress?.(`Rate limited. Waiting ${delaySec}s before retry ${attempt + 1}/${MAX_RETRIES}…`);
-      await sleep(delay);
-      continue;
-    }
-
-    if (response.status === 401) {
-      throw new Error("INVALID_API_KEY: Your Mistral API key is invalid or expired. Check Settings.");
-    }
-
-    if (response.status === 402 || errMsg.toLowerCase().includes('billing') || errMsg.toLowerCase().includes('quota')) {
-      throw new Error(`QUOTA: Mistral quota exceeded. Top up credits at https://console.mistral.ai — ${errMsg}`);
-    }
-
-    lastError = new Error(errMsg);
-    throw lastError;
-  }
-
-  throw lastError ?? new Error("Max retries exceeded");
+  const data = await apiFetch(MISTRAL_OCR_URL, { model: OCR_MODEL, document }, label, onProgress);
+  const pages: Array<{ markdown: string }> = data.pages ?? [];
+  return pages.map((p, i) => `--- Page ${i + 1} ---\n\n${p.markdown}`).join("\n\n").trim();
 }
 
 // ─────────────────────────────────────────────
-//  Public API  (same signature — no other files need changing)
+//  Step 2 — AI post-processing for math + bold + headings
+//  Mistral OCR is great at raw text but needs a nudge to:
+//   • wrap math in $...$ / $$...$$  (instead of plain text or code blocks)
+//   • bold topic names / key terms
+//   • promote underlined text to proper headings
+// ─────────────────────────────────────────────
+const POST_PROCESS_PROMPT = `You are a Markdown formatting expert. I will give you raw OCR output from a handwritten document.
+
+Your job is to REFORMAT it — do NOT change the words, only improve the Markdown structure:
+
+## 1. MATHEMATICS (MOST IMPORTANT)
+- Every mathematical expression MUST be wrapped in LaTeX delimiters:
+  - Inline math: $expression$ — e.g. $x^2 + y^2 = r^2$, $\\frac{a}{b}$, $\\alpha + \\beta$
+  - Block/display math: $$\\n expression \\n$$ — for equations on their own line
+- Convert ALL of these to proper LaTeX:
+  - Plain text like "x^2" → $x^2$
+  - Code blocks containing equations → $$ ... $$
+  - Fractions written as "a/b" in context → $\\frac{a}{b}$
+  - Greek letters written out → $\\alpha$, $\\beta$, $\\theta$, etc.
+  - Square roots → $\\sqrt{x}$
+  - Subscripts like "x_1" → $x_1$
+  - Integrals, summations, limits → proper LaTeX
+  - Chemical/physics formulas → $E = mc^2$
+- If a line is ONLY an equation, use display math ($$).
+- If math is mid-sentence, use inline math ($).
+
+## 2. HEADINGS — detect and promote:
+- Main document title → # Title
+- Chapter/section names (usually underlined or ALL CAPS or written larger) → ## Section
+- Subsection names → ### Subsection
+- If a short line is followed by body text and reads like a topic name → make it ## or ###
+
+## 3. BOLD TEXT — apply intelligently:
+- **Bold** every: topic name, key term, definition word, important concept
+- In a definition like "Ohm's Law: V = IR", bold the term: **Ohm's Law**
+- Bold the first mention of any technical term
+- Bold labels before colons: **Note:**, **Example:**, **Theorem:**, **Proof:**
+- Do NOT bold entire sentences or paragraphs
+
+## 4. PRESERVE EVERYTHING ELSE:
+- Keep all original words exactly — do not summarize or omit
+- Keep tables as Markdown tables
+- Keep lists as lists
+- Keep page separators (--- Page N ---)
+- Keep blockquotes (> ...)
+
+## OUTPUT:
+- Return ONLY the reformatted Markdown
+- No preamble, no explanation, no code fences around the whole output`;
+
+async function postProcess(
+  rawMarkdown: string,
+  onProgress?: (s: string) => void
+): Promise<string> {
+  onProgress?.("Formatting math, bold text, and headings…");
+
+  // Split into chunks of ~6000 chars to stay within context limits
+  // while preserving page boundaries
+  const pages = rawMarkdown.split(/(?=--- Page \d+ ---)/);
+  const CHUNK_SIZE = 3; // pages per chunk
+  const processed: string[] = [];
+
+  for (let i = 0; i < pages.length; i += CHUNK_SIZE) {
+    const chunk = pages.slice(i, i + CHUNK_SIZE).join("\n\n");
+    const pageNums = `${i + 1}–${Math.min(i + CHUNK_SIZE, pages.length)}`;
+    onProgress?.(`Formatting pages ${pageNums} of ${pages.length}…`);
+
+    const data = await apiFetch(
+      MISTRAL_CHAT_URL,
+      {
+        model: CHAT_MODEL,
+        max_tokens: 4096,
+        messages: [
+          { role: "system", content: POST_PROCESS_PROMPT },
+          { role: "user", content: chunk },
+        ],
+      },
+      `post-process pages ${pageNums}`,
+      onProgress
+    );
+
+    processed.push(data.choices?.[0]?.message?.content ?? chunk);
+
+    // Small pause between chunks
+    if (i + CHUNK_SIZE < pages.length) await sleep(1500);
+  }
+
+  return processed.join("\n\n").trim();
+}
+
+// ─────────────────────────────────────────────
+//  Public API
 // ─────────────────────────────────────────────
 export async function convertHandwritingToText(
   file: File,
   onProgress?: (status: string) => void
 ): Promise<string> {
-  if (file.size > MAX_RECOMMENDED_SIZE) {
+  if (file.size > MAX_RECOMMENDED_SIZE)
     console.warn(`[TypedDoc] File is ${(file.size / 1024 / 1024).toFixed(1)} MB — may be slow.`);
-  }
 
   const isPdf = file.type === "application/pdf";
-  return isPdf
-    ? convertPdfWithMistralOCR(file, onProgress)
-    : convertImageWithMistralOCR(file, onProgress);
+
+  // Step 1: OCR
+  onProgress?.(isPdf ? "Sending PDF to Mistral OCR…" : "Sending image to Mistral OCR…");
+  const rawMarkdown = isPdf
+    ? await runOCR(
+        { type: "document_url", document_url: `data:application/pdf;base64,${await toBase64(file)}` },
+        file.name, onProgress
+      )
+    : await runOCR(
+        { type: "image_url", image_url: `data:${file.type};base64,${await toBase64(file)}` },
+        file.name, onProgress
+      );
+
+  // Step 2: Post-process for math + bold + headings
+  const formatted = await postProcess(rawMarkdown, onProgress);
+
+  onProgress?.("Done!");
+  return formatted;
 }
 
-// ─────────────────────────────────────────────
-//  PDF — entire file in ONE API call 🎉
-//  Mistral OCR handles all pages server-side.
-//  No per-page splitting, no delays between pages.
-// ─────────────────────────────────────────────
-async function convertPdfWithMistralOCR(
-  file: File,
-  onProgress?: (status: string) => void
-): Promise<string> {
-  onProgress?.('Reading PDF…');
-  const base64Data = await fileToBase64(file);
-
-  onProgress?.('Sending to Mistral OCR… (processing all pages at once)');
-
-  return callMistralOCR(
-    {
-      type: "document_url",
-      document_url: `data:application/pdf;base64,${base64Data}`,
-    },
-    file.name,
-    onProgress
-  );
-}
-
-// ─────────────────────────────────────────────
-//  Image (JPG / PNG / WEBP)
-// ─────────────────────────────────────────────
-async function convertImageWithMistralOCR(
-  file: File,
-  onProgress?: (status: string) => void
-): Promise<string> {
-  onProgress?.('Reading image…');
-  const base64Data = await fileToBase64(file);
-
-  onProgress?.('Sending to Mistral OCR…');
-
-  return callMistralOCR(
-    {
-      type: "image_url",
-      image_url: `data:${file.type};base64,${base64Data}`,
-    },
-    file.name,
-    onProgress
-  );
-}
-
-// ─────────────────────────────────────────────
-//  Utility
-// ─────────────────────────────────────────────
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve((reader.result as string).split(",")[1]);
-    reader.onerror = error => reject(error);
+function toBase64(file: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.readAsDataURL(file);
+    r.onload  = () => res((r.result as string).split(",")[1]);
+    r.onerror = rej;
   });
 }

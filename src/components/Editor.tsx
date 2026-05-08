@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, ArrowLeft, Loader2, Check, CheckCircle2, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown } from 'lucide-react';
+import { Save, ArrowLeft, Loader2, Check, CheckCircle2, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Document, DocumentVersion } from '../types';
 import { updateDocument, saveVersion } from '../services/documents';
@@ -40,7 +40,7 @@ export function Editor({ document, onBack, versions }: EditorProps) {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
-      setSaveError('Save failed. Please try again.');
+      setSaveError('Save failed.');
     } finally {
       setIsSaving(false);
     }
@@ -48,7 +48,12 @@ export function Editor({ document, onBack, versions }: EditorProps) {
 
   const handleExport = (format: 'docx' | 'pdf' | 'txt') => {
     if (format === 'docx') exportToDocx(title, content);
-    else if (format === 'pdf') exportToPdf(title, content);
+    else if (format === 'pdf') {
+      setMode('preview');
+      setTimeout(() => {
+        exportToPdf(title, content);
+      }, 500);
+    }
     else exportToTxt(title, content);
   };
 
@@ -60,67 +65,73 @@ export function Editor({ document, onBack, versions }: EditorProps) {
   };
 
   return (
-    <div className="flex h-screen bg-bg overflow-hidden">
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Toolbar */}
-        <header className="h-14 border-b border-border px-4 sm:px-6 flex items-center justify-between bg-surface/50 backdrop-blur shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <button onClick={onBack} className="p-2 rounded-xl hover:bg-surface text-text-dim hover:text-text-main transition-all" title="Back">
-              <ArrowLeft className="w-4 h-4" />
+    <div className="flex h-screen bg-bg overflow-hidden relative">
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
+        {/* Floating Header */}
+        <header className="h-20 px-8 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-6 min-w-0">
+            <button onClick={onBack} className="p-3 rounded-2xl glass hover:bg-white/5 transition-all" title="Back">
+              <ArrowLeft className="w-4 h-4 text-white" />
             </button>
-            <div className="h-4 w-px bg-border hidden sm:block" />
-            <input type="text" value={title} onChange={e => { setTitle(e.target.value); setIsDirty(true); }}
-              className="text-sm font-semibold text-text-main bg-transparent border-none focus:ring-0 p-0 min-w-0 flex-1 focus:outline-none" placeholder="Untitled Document" />
-            <AnimatedBadge isDirty={isDirty} saveSuccess={saveSuccess} />
+            <div className="flex flex-col min-w-0">
+              <input type="text" value={title} onChange={e => { setTitle(e.target.value); setIsDirty(true); }}
+                className="text-lg font-display font-black text-white bg-transparent border-none focus:ring-0 p-0 truncate focus:outline-none uppercase tracking-tight" placeholder="Untitled Document" />
+              <div className="flex items-center gap-2 mt-1">
+                <AnimatedBadge isDirty={isDirty} saveSuccess={saveSuccess} />
+                {lastSaved && !isDirty && (
+                  <span className="text-[10px] text-text-dim font-bold tracking-wider">
+                    LAST SYNCED {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Mode toggle */}
-            <div className="flex items-center rounded-xl bg-surface border border-border p-0.5">
+
+          <div className="flex items-center gap-4">
+            {/* Mode Switcher */}
+            <div className="flex items-center rounded-2xl glass p-1">
               <button onClick={() => setMode('preview')}
-                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200",
-                  mode === 'preview' ? "bg-accent/15 text-accent border border-accent/25" : "text-text-dim hover:text-text-main")}>
-                <Eye className="w-3 h-3" /><span className="hidden sm:inline">Preview</span>
+                className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-bold transition-all duration-300",
+                  mode === 'preview' ? "bg-accent/10 text-accent" : "text-text-dim hover:text-white")}>
+                <Eye className="w-3.5 h-3.5" />Preview
               </button>
               <button onClick={() => setMode('edit')}
-                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200",
-                  mode === 'edit' ? "bg-accent/15 text-accent border border-accent/25" : "text-text-dim hover:text-text-main")}>
-                <Pencil className="w-3 h-3" /><span className="hidden sm:inline">Edit</span>
+                className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-bold transition-all duration-300",
+                  mode === 'edit' ? "bg-accent/10 text-accent" : "text-text-dim hover:text-white")}>
+                <Pencil className="w-3.5 h-3.5" />Edit
               </button>
             </div>
-            {lastSaved && !isDirty && (
-              <span className="text-[11px] text-text-dim font-mono hidden lg:block">
-                Saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            )}
+
             <button onClick={handleSave} disabled={isSaving || !isDirty}
-              className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all",
-                isDirty ? "text-bg" : "text-text-dim bg-surface border border-border opacity-50 cursor-not-allowed")}
-              style={isDirty ? {background:'linear-gradient(135deg,#6ee7f7,#a78bfa)'} : {}}>
-              {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : saveSuccess ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{isSaving ? 'Saving...' : saveSuccess ? 'Saved!' : 'Save'}</span>
+              className={cn("btn-primary py-2.5 px-5 h-11", !isDirty && "opacity-50 grayscale cursor-not-allowed")}>
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : saveSuccess ? <Check className="w-4 h-4 mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              <span>{isSaving ? 'Saving' : 'Sync'}</span>
             </button>
           </div>
         </header>
 
-        {/* Document area */}
-        <div className="flex-1 overflow-y-auto bg-[#0a0a0f] p-4 sm:p-8 flex justify-center items-start">
-          <motion.div initial={{y:20,opacity:0}} animate={{y:0,opacity:1}}
-            className="w-full h-fit max-w-[780px] min-h-[1056px] rounded-2xl shadow-2xl shadow-black/80 relative" style={{background:'#fafaf9'}}>
-            <div className="absolute top-6 right-8 text-[10px] text-gray-300 font-mono select-none">TYPED DOCUMENT</div>
-            <div className="absolute top-0 left-0 w-full h-1 rounded-t-2xl" style={{background:'linear-gradient(90deg,#6ee7f7,#a78bfa,#34d399)'}} />
+        {/* Paper Canvas */}
+        <div className="flex-1 overflow-y-auto p-6 sm:p-12 flex justify-center items-start scroll-smooth">
+          <motion.div layout initial={{y:40, opacity:0}} animate={{y:0, opacity:1}}
+            className="w-full max-w-[850px] min-h-[1100px] rounded-[2.5rem] shadow-[0_40px_100px_rgba(0,0,0,0.6)] relative overflow-hidden group bg-[#fafaf9] border border-white/5">
+            
+            {/* Visual Accents */}
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-accent via-accent2 to-accent3" />
+            <div className="absolute top-10 right-12 opacity-10 group-hover:opacity-30 transition-opacity font-display font-black text-xs tracking-[0.4em] select-none text-slate-900">TYPED · PRISM</div>
+            
             <AnimatePresence mode="wait">
               {mode === 'edit' ? (
-                <motion.div key="edit" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-10 sm:p-16">
+                <motion.div key="edit" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-16 sm:p-24">
                   <textarea value={content} onChange={e => { setContent(e.target.value); setIsDirty(true); setSaveSuccess(false); }}
-                    className="w-full min-h-[900px] resize-none border-none focus:ring-0 p-0 text-gray-800 leading-8 text-base bg-transparent placeholder:text-gray-300 font-mono focus:outline-none"
-                    placeholder="Your transcribed Markdown text..." spellCheck={false} />
+                    className="w-full min-h-[900px] resize-none border-none focus:ring-0 p-0 text-slate-800 leading-relaxed text-lg bg-transparent placeholder:text-slate-300 font-mono focus:outline-none"
+                    placeholder="Type or paste markdown..." spellCheck={false} />
                 </motion.div>
               ) : (
-                <motion.div key="preview" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-10 sm:p-16">
-                  <div className="mb-6 pb-4 border-b border-gray-200">
-                    <h1 className="text-[2.6em] font-extrabold text-[#0f0f23] leading-[1.15] tracking-[-0.02em]" style={{fontFamily:'"Syne", sans-serif'}}>{document.title}</h1>
+                <motion.div key="preview" id="pdf-export-content" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-16 sm:p-24">
+                  <div className="mb-12 pb-8 border-b border-slate-100">
+                    <h1 className="text-6xl font-display font-black text-slate-900 leading-tight tracking-tighter-title uppercase">{title}</h1>
                   </div>
-                  {content.trim() ? <MarkdownPreview content={content} /> : <p className="text-gray-400 italic text-center py-20">No content yet.</p>}
+                  {content.trim() ? <MarkdownPreview content={content} /> : <div className="flex flex-col items-center justify-center py-32 opacity-20"><Sparkles className="w-12 h-12 mb-4" /><p className="font-display font-bold uppercase tracking-widest text-sm">Waiting for content...</p></div>}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -128,54 +139,57 @@ export function Editor({ document, onBack, versions }: EditorProps) {
         </div>
       </div>
 
-      {/* Right sidebar */}
-      <aside className="w-64 bg-sidebar border-l border-border flex-col overflow-y-auto shrink-0 hidden md:flex">
-        <div className="p-5 space-y-8">
-          <div className="space-y-3">
-            <h4 className="text-[11px] font-mono font-semibold text-text-dim uppercase tracking-widest flex items-center gap-2"><Download className="w-3.5 h-3.5" /> Export</h4>
-            <div className="space-y-2">
-              <button onClick={() => handleExport('docx')} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold text-bg transition-all hover:opacity-90" style={{background:'linear-gradient(135deg,#6ee7f7,#a78bfa)'}}>
-                <FileType className="w-3.5 h-3.5" /> Download DOCX
+      {/* Floating Control Panel (Right Sidebar) */}
+      <aside className="w-80 p-6 flex-col overflow-y-auto shrink-0 hidden lg:flex relative z-10">
+        <div className="space-y-6">
+          
+          <div className="glass-card p-6">
+            <h4 className="text-[10px] font-bold text-text-dim uppercase tracking-[0.2em] flex items-center gap-2 mb-6"><Download className="w-3.5 h-3.5 text-accent" /> Export Assets</h4>
+            <div className="space-y-3">
+              <button onClick={() => handleExport('docx')} className="btn-primary w-full py-3 h-auto text-xs">
+                <FileType className="w-4 h-4 mr-2" /> Download DOCX
               </button>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => handleExport('pdf')} className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-semibold text-text-mid bg-surface border border-border hover:border-accent/30 hover:text-accent transition-all uppercase">
-                  <FileDown className="w-3 h-3" /> PDF
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => handleExport('pdf')} className="btn-glass py-3 flex items-center justify-center gap-2">
+                  <FileDown className="w-3.5 h-3.5" /> PDF
                 </button>
-                <button onClick={() => handleExport('txt')} className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-semibold text-text-mid bg-surface border border-border hover:border-accent/30 hover:text-accent transition-all uppercase">
-                  <FileText className="w-3 h-3" /> TXT
+                <button onClick={() => handleExport('txt')} className="btn-glass py-3 flex items-center justify-center gap-2">
+                  <FileText className="w-3.5 h-3.5" /> TXT
                 </button>
               </div>
             </div>
           </div>
-          <div className="space-y-3">
-            <h4 className="text-[11px] font-mono font-semibold text-text-dim uppercase tracking-widest flex items-center gap-2"><BarChart3 className="w-3.5 h-3.5" /> Stats</h4>
-            <div className="space-y-0 rounded-xl bg-surface border border-border overflow-hidden">
-              {[{label:'Words',value:stats.words.toLocaleString()},{label:'Characters',value:stats.chars.toLocaleString()},{label:'Read time',value:`${stats.readTime} min`},{label:'Pages',value:stats.pages}].map(({label,value}) => (
-                <div key={label} className="flex justify-between items-center py-2.5 px-3 border-b border-border last:border-0">
-                  <span className="text-[11px] text-text-dim">{label}</span>
-                  <span className="text-[11px] font-mono font-semibold text-text-main">{value}</span>
+
+          <div className="glass-card p-6">
+            <h4 className="text-[10px] font-bold text-text-dim uppercase tracking-[0.2em] flex items-center gap-2 mb-6"><BarChart3 className="w-3.5 h-3.5 text-accent" /> Asset Stats</h4>
+            <div className="space-y-4">
+              {[{label:'Words',value:stats.words.toLocaleString()},{label:'Chars',value:stats.chars.toLocaleString()},{label:'Read',value:`${stats.readTime}m`},{label:'Pages',value:stats.pages}].map(({label,value}) => (
+                <div key={label} className="flex justify-between items-center">
+                  <span className="text-[11px] font-bold text-text-dim">{label}</span>
+                  <span className="text-[11px] font-black text-white">{value}</span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="space-y-3">
-            <h4 className="text-[11px] font-mono font-semibold text-text-dim uppercase tracking-widest flex items-center gap-2"><RotateCcw className="w-3.5 h-3.5" /> History</h4>
-            {versions.length === 0 ? <p className="text-[11px] text-text-dim italic">No saved versions yet.</p> : (
-              <div className="space-y-1">{versions.slice(0, 8).map(v => (
-                <button key={v.id} onClick={() => { if(confirm('Restore this version?')) { setContent(v.content); setIsDirty(true); }}}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-[11px] text-text-dim hover:text-text-main hover:bg-surface border border-transparent hover:border-border transition-all text-left group">
-                  <span className="truncate">{v.note || 'Manual edit'}</span>
-                  <span className="font-mono text-[10px] opacity-60 group-hover:opacity-100 shrink-0 ml-2">{v.createdAt?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) || '—'}</span>
+
+          <div className="glass-card p-6">
+            <h4 className="text-[10px] font-bold text-text-dim uppercase tracking-[0.2em] flex items-center gap-2 mb-6"><RotateCcw className="w-3.5 h-3.5 text-accent" /> Version History</h4>
+            {versions.length === 0 ? <p className="text-[10px] text-text-dim italic">No snapshots yet.</p> : (
+              <div className="space-y-2">{versions.slice(0, 5).map(v => (
+                <button key={v.id} onClick={() => { if(confirm('Restore this snapshot?')) { setContent(v.content); setIsDirty(true); }}}
+                  className="w-full group p-3 rounded-2xl bg-white/5 border border-white/5 hover:border-accent/30 transition-all text-left">
+                  <p className="text-[11px] font-bold text-white truncate mb-1 group-hover:text-accent transition-colors">{v.note || 'Auto Snapshot'}</p>
+                  <p className="text-[9px] font-bold text-text-dim uppercase">{v.createdAt?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
                 </button>
               ))}</div>
             )}
           </div>
-          {lastSaved && !isDirty && (
-            <motion.div initial={{opacity:0,y:5}} animate={{opacity:1,y:0}} className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-accent3/10 border border-accent3/20">
-              <CheckCircle2 className="w-3.5 h-3.5 text-accent3 shrink-0" /><span className="text-[11px] font-medium text-accent3">Synced to cloud</span>
-            </motion.div>
+
+          {saveError && (
+            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] font-bold">
+              {saveError}
+            </div>
           )}
-          {saveError && (<div className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20"><p className="text-[11px] text-red-400">{saveError}</p></div>)}
         </div>
       </aside>
     </div>
@@ -185,10 +199,11 @@ export function Editor({ document, onBack, versions }: EditorProps) {
 function AnimatedBadge({ isDirty, saveSuccess }: { isDirty: boolean; saveSuccess: boolean }) {
   if (!isDirty && !saveSuccess) return null;
   return (
-    <motion.span initial={{opacity:0, scale:0.8}} animate={{opacity:1, scale:1}} exit={{opacity:0}}
-      className={cn("px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0",
-        isDirty ? "bg-amber-400/10 text-amber-400 border border-amber-400/20" : "bg-accent3/10 text-accent3 border border-accent3/20")}>
-      {isDirty ? 'Unsaved' : '✓ Saved'}
-    </motion.span>
+    <motion.div initial={{opacity:0, x:-10}} animate={{opacity:1, x:0}}
+      className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[9px] font-black tracking-widest uppercase",
+        isDirty ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" : "bg-accent3/10 text-accent3 border border-accent3/20")}>
+      <div className={cn("w-1 h-1 rounded-full", isDirty ? "bg-amber-500 animate-pulse" : "bg-accent3")} />
+      {isDirty ? 'UNSYNCED' : 'SECURE'}
+    </motion.div>
   );
 }

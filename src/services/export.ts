@@ -11,7 +11,7 @@ import html2canvas from 'html2canvas';
 // ── Markdown parser helpers ──
 
 interface ParsedBlock {
-  type: 'heading' | 'paragraph' | 'table' | 'list-item' | 'blockquote' | 'code' | 'separator' | 'hr' | 'empty';
+  type: 'heading' | 'paragraph' | 'table' | 'list-item' | 'blockquote' | 'code' | 'math' | 'separator' | 'hr' | 'empty';
   level?: number;        // heading level 1-6
   ordered?: boolean;     // list type
   text?: string;         // text content
@@ -50,7 +50,7 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
         i++;
       }
       i++; // skip closing $$
-      blocks.push({ type: 'code', lines: mathLines });
+      blocks.push({ type: 'math', lines: mathLines });
       continue;
     }
 
@@ -67,7 +67,7 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
         mathLines.push(lines[i]);
         i++;
       }
-      blocks.push({ type: 'code', lines: mathLines });
+      blocks.push({ type: 'math', lines: mathLines });
       continue;
     }
 
@@ -157,7 +157,7 @@ function stripInline(text: string): string {
 
 function parseInlineRuns(text: string): TextRun[] {
   const runs: TextRun[] = [];
-  const regex = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|_[^_]+_|[^*_`]+)/g;
+  const regex = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\$[^\$]+\$|\*[^*]+\*|_[^_]+_|[^*_`\$]+)/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     const seg = match[1];
@@ -171,6 +171,10 @@ function parseInlineRuns(text: string): TextRun[] {
       runs.push(new TextRun({ text: seg.slice(1, -1), italics: true, size: 24 }));
     } else if (seg.startsWith('_') && seg.endsWith('_')) {
       runs.push(new TextRun({ text: seg.slice(1, -1), italics: true, size: 24 }));
+    } else if (seg.startsWith('$') && seg.endsWith('$')) {
+      // Clean inline math
+      const math = seg.slice(1, -1).replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\quad/g, '  ');
+      runs.push(new TextRun({ text: math, italics: true, color: '444444', size: 24 }));
     } else if (seg.length > 0) {
       runs.push(new TextRun({ text: seg, size: 24 }));
     }
@@ -263,6 +267,24 @@ export async function exportToDocx(title: string, content: string) {
             spacing: { after: 40 },
             shading: { fill: 'F5F5F5' },
           }));
+        });
+        break;
+
+      case 'math':
+        (block.lines || []).forEach(mathLine => {
+          const clean = mathLine
+            .replace(/\\text\{([^}]+)\}/g, '$1')
+            .replace(/\\quad/g, '  ')
+            .replace(/\\begin\{[^}]+\}/g, '')
+            .replace(/\\end\{[^}]+\}/g, '')
+            .trim();
+          if (clean) {
+            children.push(new Paragraph({
+              children: [new TextRun({ text: clean, italics: true, color: '444444', size: 26 })],
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 80, after: 80 },
+            }));
+          }
         });
         break;
 

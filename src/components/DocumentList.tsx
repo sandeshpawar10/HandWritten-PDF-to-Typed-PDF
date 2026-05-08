@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, FileImage, ChevronRight, Trash2, Clock, ArrowUpDown } from 'lucide-react';
+import { FileText, FileImage, ChevronRight, Trash2, Clock, ArrowUpDown, Table2, Layers } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Document } from '../types';
 import { deleteDocument } from '../services/documents';
@@ -18,7 +18,7 @@ export function DocumentList({ documents, onSelect, selectedId }: DocumentListPr
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm('Delete this document permanently?')) await deleteDocument(id);
+    if (confirm('Delete this asset permanently?')) await deleteDocument(id);
   };
 
   const sorted = [...documents].sort((a, b) => {
@@ -28,45 +28,40 @@ export function DocumentList({ documents, onSelect, selectedId }: DocumentListPr
       const wB = b.content.trim().split(/\s+/).length;
       return wB - wA;
     }
-    // date (default) — newest first, handled by Firestore orderBy
     return 0;
   });
 
   if (documents.length === 0) {
     return (
-      <motion.div initial={{opacity:0}} animate={{opacity:1}}
-        className="flex flex-col items-center justify-center py-24 text-center"
-      >
-        <div className="w-16 h-16 rounded-2xl bg-surface border border-border flex items-center justify-center mb-5">
-          <FileText className="w-7 h-7 text-text-dim" />
+      <motion.div initial={{opacity:0}} animate={{opacity:1}} className="flex flex-col items-center justify-center py-32 text-center">
+        <div className="w-20 h-20 rounded-3xl glass flex items-center justify-center mb-8 border-accent/20">
+          <Layers className="w-8 h-8 text-text-dim" />
         </div>
-        <h3 className="text-base font-display font-semibold text-text-main mb-2">No documents yet</h3>
-        <p className="text-sm text-text-dim max-w-xs">
-          Upload a handwritten PDF or image to get started.
+        <h3 className="text-xl font-display font-black text-white mb-2 uppercase tracking-tight">Archive Empty</h3>
+        <p className="text-sm text-text-dim max-w-xs font-bold">
+          No assets detected. Switch to Converter to digitize your handwriting.
         </p>
       </motion.div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       {/* Sort controls */}
-      <div className="flex items-center gap-2 justify-end">
-        <ArrowUpDown className="w-3 h-3 text-text-dim" />
-        {(['date', 'name', 'words'] as SortKey[]).map(key => (
-          <button key={key} onClick={() => setSortBy(key)}
-            className={cn(
-              "px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all capitalize",
-              sortBy === key
-                ? "bg-accent/10 text-accent border border-accent/20"
-                : "text-text-dim hover:text-text-main hover:bg-surface border border-transparent"
-            )}>
-            {key}
-          </button>
-        ))}
+      <div className="flex items-center gap-3 justify-end">
+        <span className="text-[10px] font-bold text-text-dim uppercase tracking-[0.2em] mr-2">Sort By</span>
+        <div className="flex items-center p-1 rounded-2xl glass border-white/5">
+          {(['date', 'name', 'words'] as SortKey[]).map(key => (
+            <button key={key} onClick={() => setSortBy(key)}
+              className={cn("px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all uppercase tracking-wider",
+                sortBy === key ? "bg-accent/10 text-accent" : "text-text-dim hover:text-white")}>
+              {key}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sorted.map((doc, i) => {
           const ext = doc.originalFileName?.split('.').pop()?.toLowerCase() || 'doc';
           const isImage = ['png', 'jpg', 'jpeg', 'webp'].includes(ext);
@@ -76,66 +71,38 @@ export function DocumentList({ documents, onSelect, selectedId }: DocumentListPr
           const hasTable = doc.content.includes('|---') || doc.content.includes('| ---');
 
           return (
-            <motion.div
-              key={doc.id}
-              initial={{opacity:0, y:12}}
-              animate={{opacity:1, y:0}}
-              transition={{delay: i * 0.05, ease:[0.16,1,0.3,1]}}
-              onClick={() => onSelect(doc)}
-              className="group relative rounded-2xl glass border border-border hover:border-accent/30 p-5 cursor-pointer transition-all duration-300 hover:bg-surface/60 overflow-hidden"
-            >
-              {/* Hover glow */}
-              <div className="absolute inset-0 bg-gradient-to-br from-accent/3 to-accent2/3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl" />
+            <motion.div key={doc.id} initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} transition={{delay: i * 0.05, ease:[0.16,1,0.3,1]}}
+              onClick={() => onSelect(doc)} className="glass-card p-6 cursor-pointer group relative overflow-hidden">
+              
+              {/* Highlight bar */}
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent/0 via-accent/40 to-accent/0 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-              {/* Top accent line */}
-              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-accent/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-
-              <div className="relative z-10">
-                {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent/10 to-accent2/10 border border-accent/20 flex items-center justify-center">
-                    <TypeIcon className="w-4 h-4 text-accent" />
-                  </div>
-                  <button
-                    onClick={e => handleDelete(e, doc.id)}
-                    className="p-1.5 rounded-lg text-text-dim hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+              <div className="flex items-start justify-between mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-accent/5 border border-accent/10 flex items-center justify-center group-hover:border-accent/30 transition-colors">
+                  <TypeIcon className="w-5 h-5 text-accent" />
                 </div>
+                <button onClick={e => handleDelete(e, doc.id)} className="p-2 rounded-xl text-text-dim hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
 
-                {/* Title */}
-                <h4 className="font-display font-semibold text-sm text-text-main mb-1 truncate pr-2 group-hover:text-accent transition-colors">
-                  {doc.title || 'Untitled Document'}
-                </h4>
+              <h4 className="font-display font-black text-lg text-white mb-2 truncate pr-2 group-hover:text-accent transition-colors uppercase tracking-tight">
+                {doc.title || 'Untitled Asset'}
+              </h4>
 
-                {/* Preview */}
-                <p className="text-[12px] text-text-dim line-clamp-2 leading-relaxed mb-4">
-                  {doc.content.slice(0, 120).replace(/[#*_|`>-]/g, '')}...
-                </p>
+              <p className="text-[13px] text-text-dim line-clamp-2 leading-relaxed mb-6 font-medium">
+                {doc.content.slice(0, 100).replace(/[#*_|`>-]/g, '')}...
+              </p>
 
-                {/* Footer */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium text-accent bg-accent/10 border border-accent/20">
-                      {ext.toUpperCase()}
-                    </span>
-                    <span className="text-[11px] text-text-dim font-mono">{wordCount} words</span>
-                    {hasTable && (
-                      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-medium text-accent2 bg-accent2/10 border border-accent2/20">
-                        TABLE
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-text-dim">
-                    {date && (
-                      <>
-                        <Clock className="w-3 h-3" />
-                        {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      </>
-                    )}
-                    <ChevronRight className="w-3.5 h-3.5 text-accent opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                  </div>
+              <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-accent opacity-60 uppercase">{ext}</span>
+                  <span className="text-[10px] font-bold text-text-dim uppercase tracking-tighter">{wordCount} WORDS</span>
+                  {hasTable && <Table2 className="w-3 h-3 text-accent2 opacity-60" />}
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-bold text-text-dim uppercase">
+                  {date && date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  <ChevronRight className="w-3 h-3 text-accent group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
             </motion.div>
