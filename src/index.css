@@ -55,7 +55,7 @@ body {
 }
 
 /* ── Glassmorphism ── */
-.glass {
+@utility glass {
   background: var(--color-surface);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -76,7 +76,7 @@ body {
 
 /* ── Typography Styles ── */
 .font-display { font-family: var(--font-display); }
-.tracking-tighter-title { letter-spacing: -0.05em; }
+.tracking-tighter-title { letter-spacing: -0.06em; }
 
 /* ── Buttons ── */
 .btn-primary {
@@ -126,19 +126,3 @@ body {
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-dim); }
-
-/* ── Printing ── */
-@media print {
-  body * { visibility: hidden !important; }
-  #pdf-export-content, #pdf-export-content * { visibility: visible !important; }
-  #pdf-export-content {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    background: white !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-  }
-}
