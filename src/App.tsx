@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { 
   FileText, Plus, LogOut, Search, Files, Sparkles, User, ArrowRight,
@@ -23,6 +23,7 @@ export default function App() {
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [jobs, setJobs] = useState<ConversionJob[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [view, setView] = useState<'list' | 'upload' | 'edit' | 'settings'>('list');
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [mobileSidebar, setMobileSidebar] = useState(false);
@@ -86,9 +87,15 @@ export default function App() {
     }
   };
 
+  // Debounce search input — waits 300ms after last keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const filteredDocuments = documents.filter(doc =>
-    doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    doc.content.toLowerCase().includes(searchQuery.toLowerCase())
+    doc.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    (debouncedSearch.length > 2 && doc.content.toLowerCase().includes(debouncedSearch.toLowerCase()))
   );
 
   if (loading) {

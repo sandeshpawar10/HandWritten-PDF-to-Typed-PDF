@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Save, ArrowLeft, Loader2, Check, CheckCircle2, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Document, DocumentVersion } from '../types';
@@ -22,6 +22,11 @@ export function Editor({ document, onBack, versions }: EditorProps) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [mode, setMode] = useState<'preview' | 'edit'>('preview');
+  const [isExporting, setIsExporting] = useState<string | null>(null); // tracks which format is exporting
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+
+  // Auto-save timer ref
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setContent(document.content);
@@ -29,7 +34,19 @@ export function Editor({ document, onBack, versions }: EditorProps) {
     setIsDirty(false);
   }, [document]);
 
-  const handleSave = async () => {
+  // Memoized stats — only recalculates when content changes, not on every render
+  const stats = useMemo(() => {
+    const trimmed = content.trim();
+    const words = trimmed ? trimmed.split(/\s+/).length : 0;
+    return {
+      words,
+      chars: content.length,
+      readTime: Math.max(1, Math.ceil(words / 200)),
+      pages: (content.match(/^--- Page \d+ ---$/m) || []).length + 1,
+    };
+  }, [content]);
+
+  const handleSave = useCallback(async () => {
     if (isSaving) return;
     setIsSaving(true); setSaveError(null); setSaveSuccess(false);
     try {
@@ -44,24 +61,42 @@ export function Editor({ document, onBack, versions }: EditorProps) {
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [content, title, document.id, document.userId, isSaving]);
 
-  const handleExport = (format: 'docx' | 'pdf' | 'txt') => {
-    if (format === 'docx') exportToDocx(title, content);
-    else if (format === 'pdf') {
-      setMode('preview');
+  // Auto-save: debounced 5s after last edit
+  useEffect(() => {
+    if (!isDirty) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      handleSave();
+    }, 5000);
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [content, title, isDirty, handleSave]);
+
+  const handleExport = async (format: 'docx' | 'pdf' | 'txt') => {
+    setIsExporting(format);
+    try {
+      if (format === 'docx') {
+        await exportToDocx(title, content);
+      } else if (format === 'pdf') {
+        // Lazy-render the print container, then export
+        setShowPrintPreview(true);
+        setMode('preview');
+        // Wait for React to render the MarkdownPreview inside the print container
+        await new Promise(r => setTimeout(r, 800));
+        await exportToPdf(title, content);
+      } else {
+        await exportToTxt(title, content);
+      }
+    } finally {
       setTimeout(() => {
-        exportToPdf(title, content);
-      }, 500);
+        setIsExporting(null);
+        // Keep print preview for a bit in case the print dialog is still open
+        setTimeout(() => setShowPrintPreview(false), 3000);
+      }, 1000);
     }
-    else exportToTxt(title, content);
-  };
-
-  const stats = {
-    words: content.trim() ? content.trim().split(/\s+/).length : 0,
-    chars: content.length,
-    readTime: Math.max(1, Math.ceil(content.trim().split(/\s+/).length / 200)),
-    pages: (content.match(/^--- Page \d+ ---$/m) || []).length + 1,
   };
 
   return (
@@ -127,7 +162,7 @@ export function Editor({ document, onBack, versions }: EditorProps) {
                     placeholder="Type or paste markdown..." spellCheck={false} />
                 </motion.div>
               ) : (
-                <motion.div key="preview" id="pdf-export-content" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-16 sm:p-24">
+                <motion.div key="preview" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-16 sm:p-24">
                   <div className="mb-12 pb-8 border-b border-slate-100">
                     <h1 className="text-6xl font-display font-black text-slate-900 leading-tight tracking-tighter-title uppercase">{title}</h1>
                   </div>
@@ -135,6 +170,16 @@ export function Editor({ document, onBack, versions }: EditorProps) {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Lazy Print-Only Container — only rendered when exporting PDF */}
+            {showPrintPreview && (
+              <div id="pdf-export-content" className="hidden print:block absolute inset-0 bg-white p-[20mm] z-[-1] pointer-events-none opacity-0 print:opacity-100 print:z-[9999] print:relative print:p-0">
+                <div className="mb-12 pb-8 border-b border-slate-900">
+                  <h1 className="text-4xl font-display font-black text-slate-900 leading-tight uppercase">{title}</h1>
+                </div>
+                <MarkdownPreview content={content} />
+              </div>
+            )}
           </motion.div>
         </div>
       </div>
@@ -146,15 +191,18 @@ export function Editor({ document, onBack, versions }: EditorProps) {
           <div className="glass-card p-6">
             <h4 className="text-[10px] font-bold text-text-dim uppercase tracking-[0.2em] flex items-center gap-2 mb-6"><Download className="w-3.5 h-3.5 text-accent" /> Export Assets</h4>
             <div className="space-y-3">
-              <button onClick={() => handleExport('docx')} className="btn-primary w-full py-3 h-auto text-xs">
-                <FileType className="w-4 h-4 mr-2" /> Download DOCX
+              <button onClick={() => handleExport('docx')} disabled={!!isExporting} className={cn("btn-primary w-full py-3 h-auto text-xs", isExporting && "opacity-60 cursor-wait")}>
+                {isExporting === 'docx' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileType className="w-4 h-4 mr-2" />}
+                {isExporting === 'docx' ? 'Generating…' : 'Download DOCX'}
               </button>
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => handleExport('pdf')} className="btn-glass py-3 flex items-center justify-center gap-2">
-                  <FileDown className="w-3.5 h-3.5" /> PDF
+                <button onClick={() => handleExport('pdf')} disabled={!!isExporting} className={cn("btn-glass py-3 flex items-center justify-center gap-2", isExporting && "opacity-60 cursor-wait")}>
+                  {isExporting === 'pdf' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                  {isExporting === 'pdf' ? '…' : 'PDF'}
                 </button>
-                <button onClick={() => handleExport('txt')} className="btn-glass py-3 flex items-center justify-center gap-2">
-                  <FileText className="w-3.5 h-3.5" /> TXT
+                <button onClick={() => handleExport('txt')} disabled={!!isExporting} className={cn("btn-glass py-3 flex items-center justify-center gap-2", isExporting && "opacity-60 cursor-wait")}>
+                  {isExporting === 'txt' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                  {isExporting === 'txt' ? '…' : 'TXT'}
                 </button>
               </div>
             </div>

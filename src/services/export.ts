@@ -4,9 +4,6 @@ import {
   HeadingLevel, Table, TableRow, TableCell, WidthType,
   BorderStyle, AlignmentType
 } from 'docx';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import html2canvas from 'html2canvas';
 
 // ── Markdown parser helpers ──
 
@@ -355,8 +352,8 @@ export async function exportToPdf(title: string, _content: string) {
         ${styles}
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
         <style>
-          /* Force a single consistent font on EVERY element */
-          *, *::before, *::after {
+          /* Force a single consistent font on text elements, but exclude KaTeX to prevent breaking math symbols */
+          body, p, div, span, li, h1, h2, h3, h4, th, td, blockquote {
             font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
           }
           /* Exception: KaTeX math symbols must keep their own font */
@@ -368,35 +365,44 @@ export async function exportToPdf(title: string, _content: string) {
             background: white !important; 
             margin: 0 !important; 
             padding: 18mm !important;
-            font-size: 13pt;
-            line-height: 1.75;
+            font-size: 20pt; /* Increased base font size for maximum readability */
+            line-height: 1.8;
             color: #0f172a;
           }
 
-          /* Headings */
-          .md-h1 { font-size: 22pt; font-weight: 800; margin: 2rem 0 1rem; border-bottom: 2px solid #1e293b; padding-bottom: 0.5rem; }
-          .md-h2 { font-size: 18pt; font-weight: 700; margin: 1.8rem 0 0.8rem; }
-          .md-h3 { font-size: 15pt; font-weight: 700; margin: 1.5rem 0 0.6rem; }
-          .md-h4 { font-size: 13pt; font-weight: 700; margin: 1.2rem 0 0.5rem; }
+          /* Headings - scaled up */
+          .md-h1 { font-size: 32pt; font-weight: 800; margin: 2rem 0 1rem; border-bottom: 3px solid #1e293b; padding-bottom: 0.5rem; }
+          .md-h2 { font-size: 28pt; font-weight: 700; margin: 1.8rem 0 0.8rem; }
+          .md-h3 { font-size: 24pt; font-weight: 700; margin: 1.5rem 0 0.6rem; }
+          .md-h4 { font-size: 22pt; font-weight: 700; margin: 1.2rem 0 0.5rem; }
 
           /* Paragraphs */
-          .md-paragraph { margin-bottom: 0.9rem; line-height: 1.75; font-size: 13pt; }
+          .md-paragraph { margin-bottom: 1rem; line-height: 1.8; font-size: 20pt; }
 
           /* Bold */
           strong { font-weight: 700; }
 
           /* Lists */
-          .md-ul, .md-ol { margin: 0.8rem 0; padding-left: 2rem; font-size: 13pt; }
-          .md-ul li, .md-ol li { margin-bottom: 0.4rem; line-height: 1.7; }
+          .md-ul, .md-ol { margin: 1rem 0; padding-left: 2rem; font-size: 20pt; }
+          .md-ul li, .md-ol li { margin-bottom: 0.6rem; line-height: 1.8; }
 
           /* Math blocks */
           .md-math-block {
             page-break-inside: avoid;
-            margin: 1.2rem 0 !important;
-            padding: 0.8rem 1rem !important;
+            margin: 1.5rem 0 !important;
+            padding: 1rem !important;
             background: #f8fafc !important;
             border: 1px solid #e2e8f0 !important;
             border-radius: 8px !important;
+            font-size: 18pt !important;
+            overflow-x: hidden;
+          }
+
+          /* Force line breaking on long equations */
+          .md-math-block .katex-display, .md-math-block .katex {
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
           }
 
           /* Inline code */
@@ -415,19 +421,19 @@ export async function exportToPdf(title: string, _content: string) {
             color: #e2e8f0;
             padding: 1rem;
             border-radius: 8px;
-            font-size: 10pt;
-            margin: 1rem 0;
+            font-size: 17pt;
+            margin: 1.5rem 0;
             page-break-inside: avoid;
           }
           .md-code-block * { font-family: "Fira Code", "Consolas", monospace !important; }
 
           /* Tables */
-          .md-table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 12pt; }
-          .md-table th, .md-table td { border: 1px solid #cbd5e1; padding: 8px 12px; }
+          .md-table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 18pt; }
+          .md-table th, .md-table td { border: 1px solid #cbd5e1; padding: 10px 14px; }
           .md-table th { background: #f1f5f9; font-weight: 700; }
 
           /* Blockquotes */
-          .md-blockquote { border-left: 4px solid #94a3b8; margin: 1rem 0; padding: 0.5rem 1rem; color: #475569; }
+          .md-blockquote { border-left: 5px solid #94a3b8; margin: 1.5rem 0; padding: 0.5rem 1rem; color: #475569; font-size: 20pt; }
 
           /* Page separators */
           .md-page-separator {
@@ -441,7 +447,40 @@ export async function exportToPdf(title: string, _content: string) {
           }
 
           /* HR */
-          .md-hr { border: none; border-top: 1px solid #cbd5e1; margin: 1.5rem 0; }
+          .md-hr { border: none; border-top: 2px solid #cbd5e1; margin: 2rem 0; }
+
+          /* Images */
+          .md-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            margin: 1.5rem auto;
+            display: block;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+          }
+
+          /* Image Placeholder */
+          .md-image-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 1rem;
+            margin: 1.5rem auto;
+            max-width: 400px;
+            background-color: #f1f5f9;
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            color: #64748b;
+            font-weight: 700;
+            font-size: 11pt;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+          }
+          .md-image-placeholder svg {
+            width: 20px;
+            height: 20px;
+          }
         </style>
       </head>
       <body>
@@ -449,8 +488,16 @@ export async function exportToPdf(title: string, _content: string) {
           ${printEl.innerHTML}
         </div>
         <script>
-          // Wait for images and fonts to load before printing
-          window.onload = () => {
+          // Ensure fonts are fully loaded before triggering print to prevent font mismatch on different pages
+          window.onload = async () => {
+            try {
+              if (document.fonts && document.fonts.ready) {
+                await document.fonts.ready;
+              }
+            } catch (e) {
+              console.error("Error waiting for fonts", e);
+            }
+            
             setTimeout(() => {
               window.print();
               setTimeout(() => {
