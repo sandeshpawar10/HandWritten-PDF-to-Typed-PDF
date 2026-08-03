@@ -1,20 +1,142 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 📝 HandWritten PDF to Typed PDF
 
-# Run and deploy your AI Studio app
+Convert handwritten PDF documents into clean and readable typed PDFs using OCR and modern web technologies.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/fe552093-8c82-47e6-a2b2-a17b5ade06ee
+## 🚀 Overview
 
-## Run Locally
+HandWritten PDF to Typed PDF is a project designed to help users digitize handwritten notes, assignments, and scanned documents into properly typed PDF files.
 
-**Prerequisites:**  Node.js
+The system extracts handwritten text from uploaded PDFs, processes it using OCR technology, and generates a clean typed version for easy reading and sharing.
 
+---
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## ✨ Features
+
+- 📂 Upload handwritten PDF files
+- 🔍 Extract handwritten text using OCR
+- 📝 Convert handwritten text into typed format
+- 📄 Generate downloadable typed PDFs
+- ⚡ Fast and simple workflow
+- 💻 User-friendly interface
+
+---
+
+## 🛠️ Tech Stack
+
+### Frontend
+- React.js
+- HTML5
+- CSS3
+- JavaScript
+
+### Backend
+- Node.js
+- Express.js
+
+### OCR & PDF Processing
+- Tesseract OCR
+- PDF Libraries
+
+---
+
+## 📁 Project Structure
+
+```bash
+HandWritten-PDF-to-Typed-PDF/
+│
+├── frontend/
+├── backend/
+├── public/
+├── src/
+├── screenshots/
+├── package.json
+└── README.md
+```
+
+---
+
+## ⚙️ Installation
+
+### 1️⃣ Clone the Repository
+
+```bash
+git clone https://github.com/sandeshpawar10/HandWritten-PDF-to-Typed-PDF.git
+```
+
+### 2️⃣ Navigate to the Project Folder
+
+```bash
+cd HandWritten-PDF-to-Typed-PDF
+```
+
+### 3️⃣ Install Dependencies
+
+```bash
+npm install
+```
+
+---
+
+## ▶️ Run the Project
+
+### Start Frontend
+
+```bash
+npm start
+```
+
+### Start Backend
+
+```bash
+node server.js
+```
+
+---
+
+## 🧑‍💻 How It Works
+
+1. Upload a handwritten PDF document
+2. OCR extracts text from the handwritten pages
+3. Extracted text is processed and formatted
+4. A clean typed PDF is generated
+5. Download the final typed PDF
+
+---
+
+## 📸 Screenshots
+
+Add your project screenshots here.
+
+```md
+![Home Page](screenshots/home.png)
+
+![Output PDF](screenshots/output.png)
+```
+
+---
+
+## 🔮 Future Enhancements
+
+- 🌍 Multi-language support
+- 🤖 AI-based handwriting improvement
+- ☁️ Cloud storage integration
+- 📱 Mobile responsive design
+- ⚡ Faster PDF processing
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+## 👨‍💻 Author
+
+### Sandesh Pawar
+
+GitHub: https://github.com/sandeshpawar10
+
+---
