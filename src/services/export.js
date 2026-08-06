@@ -335,7 +335,6 @@ export async function exportToPdf(title, content) {
       <head>
         <title>${title}</title>
         ${styles}
-        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
         <style>
           /* Page setup — controls the actual printed page margins */
           @page {
@@ -348,9 +347,9 @@ export async function exportToPdf(title, content) {
             box-sizing: border-box;
           }
 
-          /* Force a single consistent font, but exclude KaTeX */
+          /* Times New Roman — classic academic document font */
           body, p, div, span, li, h1, h2, h3, h4, th, td, blockquote {
-            font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+            font-family: "Times New Roman", Times, Georgia, serif !important;
           }
           .katex, .katex * {
             font-family: KaTeX_Main, KaTeX_Math, "Times New Roman", serif !important;

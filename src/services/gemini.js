@@ -4,27 +4,14 @@
  * with real LaTeX math and smart bold/heading detection.
  */
 
-const MISTRAL_OCR_URL  = "https://api.mistral.ai/v1/ocr";
-const MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions";
+import { auth } from '../lib/firebase.js';
+
+const PROXY_OCR_URL  = "/api/ocr";
+const PROXY_CHAT_URL = "/api/chat";
 const OCR_MODEL        = "mistral-ocr-latest";
 const CHAT_MODEL       = "mistral-medium-latest";   // used for post-processing
 
 const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024;
-
-// ─────────────────────────────────────────────
-//  API key
-// ─────────────────────────────────────────────
-function getApiKey() {
-  const key =
-    (typeof process !== "undefined" && process.env?.MISTRAL_API_KEY) ||
-    import.meta.env?.VITE_MISTRAL_API_KEY ||
-    null;
-
-  if (!key) throw new Error(
-    "NO_API_KEY: No Mistral API key found. Please add VITE_MISTRAL_API_KEY to your .env file."
-  );
-  return key;
-}
 
 // ─────────────────────────────────────────────
 //  Retry helpers
@@ -52,10 +39,14 @@ async function apiFetch(
   label, onProgress
 ) {
   let lastErr;
+  // Get Firebase ID token
+  if (!auth.currentUser) throw new Error("Must be logged in to process documents.");
+  const token = await auth.currentUser.getIdToken();
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getApiKey()}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
     });
     const data = await res.json();
@@ -84,7 +75,7 @@ async function runOCR(
   label,
   onProgress
 ) {
-  const data = await apiFetch(MISTRAL_OCR_URL, { model: OCR_MODEL, document, include_image_base64: true }, label, onProgress);
+  const data = await apiFetch(PROXY_OCR_URL, { model: OCR_MODEL, document, include_image_base64: true }, label, onProgress);
   const pages = data.pages ?? [];
   
   const imageMap = {};
@@ -166,9 +157,9 @@ async function postProcess(
     const chunk = pages.slice(i, i + CHUNK_SIZE).join("\n\n");
     const pageNums = `${i + 1}–${Math.min(i + CHUNK_SIZE, pages.length)}`;
     onProgress?.(`Formatting pages ${pageNums} of ${pages.length}…`);
-
+    
     const data = await apiFetch(
-      MISTRAL_CHAT_URL,
+      PROXY_CHAT_URL,
       {
         model: CHAT_MODEL,
         max_tokens: 8192,
