@@ -151,47 +151,53 @@ export function Editor({ doc, onBack, versions }) {
     <div className="flex h-screen bg-[#F5F0E8] overflow-hidden relative">
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Floating Header */}
-        <header className="h-20 px-8 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-6 min-w-0">
-            <button onClick={onBack} className="p-3 rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0] hover:bg-[#E8DFD0]/50 transition-all" title="Back">
-              <ArrowLeft className="w-4 h-4 text-[#3D2E1C]" />
+        <header className="h-auto min-h-[80px] py-4 px-4 sm:px-8 flex flex-col sm:flex-row items-start sm:items-center justify-between shrink-0 gap-4">
+          <div className="flex items-center gap-3 sm:gap-6 min-w-0 w-full sm:w-auto">
+            <button onClick={onBack} className="shrink-0 p-2.5 sm:p-3 rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0] hover:bg-[#E8DFD0]/50 transition-all flex items-center justify-center" title="Back">
+              <ArrowLeft className="w-5 h-5 text-[#3D2E1C]" />
             </button>
-            <div className="flex flex-col min-w-0">
+            <div className="flex flex-col min-w-0 flex-1">
               <input type="text" value={title} onChange={e => { setTitle(e.target.value); setIsDirty(true); }}
-                className="text-lg font-serif font-black text-[#3D2E1C] bg-transparent border-none focus:ring-0 p-0 truncate focus:outline-none tracking-tight" placeholder="Untitled Document" />
-              <div className="flex items-center gap-2 mt-1">
+                className="text-lg sm:text-xl font-serif font-black text-[#3D2E1C] bg-transparent border-none focus:ring-0 p-0 truncate focus:outline-none tracking-tight w-full" placeholder="Untitled Document" />
+              <div className="flex items-center gap-2 mt-0.5">
                 <AnimatedBadge isDirty={isDirty} saveSuccess={saveSuccess} />
                 {lastSaved && !isDirty && (
-                  <span className="text-[10px] text-[#8C7B6B] font-bold tracking-wider">
-                    Last synced {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  <span className="text-[10px] text-[#8C7B6B] font-bold tracking-wider truncate">
+                    Saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
               </div>
             </div>
+            
+            {/* Mobile-only menu button moved to the top row for space efficiency */}
+            <button onClick={() => setShowMobileMenu(true)} className="sm:hidden shrink-0 p-2.5 rounded-xl bg-[#FFFBF5] border border-[#E8DFD0] hover:bg-[#E8DFD0]/50 transition-all text-[#3D2E1C] flex items-center justify-center">
+              <Menu className="w-5 h-5" />
+            </button>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
             {/* Mode Switcher */}
-            <div className="flex items-center rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0] p-1">
+            <div className="flex items-center rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0] p-1 shrink-0">
               <button onClick={() => setMode('preview')}
-                className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-bold transition-all duration-300",
+                className={cn("flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-300",
                   mode === 'preview' ? "bg-[#8B5E3C]/10 text-[#8B5E3C]" : "text-[#8C7B6B] hover:text-[#3D2E1C]")}>
-                <Eye className="w-3.5 h-3.5" />Preview
+                <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />Preview
               </button>
               <button onClick={() => setMode('edit')}
-                className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-bold transition-all duration-300",
+                className={cn("flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-300",
                   mode === 'edit' ? "bg-[#8B5E3C]/10 text-[#8B5E3C]" : "text-[#8C7B6B] hover:text-[#3D2E1C]")}>
-                <Pencil className="w-3.5 h-3.5" />Edit
+                <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />Edit
               </button>
             </div>
 
             <button onClick={handleSave} disabled={isSaving || !isDirty}
-              className={cn("bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center py-2.5 px-4 sm:px-5 h-11", !isDirty && "opacity-50 grayscale cursor-not-allowed")}>
+              className={cn("shrink-0 bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center py-2 px-4 h-[38px] sm:h-11", !isDirty && "opacity-50 grayscale cursor-not-allowed")}>
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : saveSuccess ? <Check className="w-4 h-4 sm:mr-2" /> : <Save className="w-4 h-4 sm:mr-2" />}
               <span className="hidden sm:inline">{isSaving ? 'Saving' : 'Sync'}</span>
             </button>
 
-            <button onClick={() => setShowMobileMenu(true)} className="lg:hidden p-3 rounded-xl bg-[#FFFBF5] border border-[#E8DFD0] hover:bg-[#E8DFD0]/50 transition-all text-[#3D2E1C] h-11 flex items-center justify-center">
+            {/* Desktop menu button (mobile is up top) */}
+            <button onClick={() => setShowMobileMenu(true)} className="hidden sm:flex lg:hidden shrink-0 p-2.5 rounded-xl bg-[#FFFBF5] border border-[#E8DFD0] hover:bg-[#E8DFD0]/50 transition-all text-[#3D2E1C] h-11 items-center justify-center">
               <Menu className="w-4 h-4" />
             </button>
           </div>
