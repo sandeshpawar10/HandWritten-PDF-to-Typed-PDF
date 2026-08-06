@@ -306,7 +306,32 @@ export async function exportToPdf(title, content) {
     return;
   }
 
-  // Create a properly sized hidden iframe — the browser needs real dimensions
+  // Mobile: bypass print dialog and directly download using html2pdf.js
+  if (window.innerWidth < 768) {
+    const html2pdf = (await import('html2pdf.js')).default;
+    
+    // Temporarily make the container visible so html2canvas can capture it
+    const originalClasses = printEl.className;
+    printEl.className = "absolute inset-0 bg-white p-[20mm] z-[9999] opacity-100 block";
+    
+    const opt = {
+      margin:       15,
+      filename:     `${title || 'Document'}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    try {
+      await html2pdf().set(opt).from(printEl).save();
+    } finally {
+      // Restore original classes
+      printEl.className = originalClasses;
+    }
+    return;
+  }
+
+  // Laptop/Desktop logic: Create a properly sized hidden iframe
   // to calculate layout widths correctly for print
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';

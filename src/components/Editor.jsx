@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Save, ArrowLeft, Loader2, Check, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles } from 'lucide-react';
+import { Save, ArrowLeft, Loader2, Check, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { updateDocument, saveVersion } from '../services/documents';
 import { exportToDocx, exportToPdf, exportToTxt } from '../services/export';
@@ -17,6 +17,7 @@ export function Editor({ doc, onBack, versions }) {
   const [mode, setMode] = useState('preview');
   const [isExporting, setIsExporting] = useState(null); // tracks which format is exporting
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Auto-save timer ref
   const autoSaveTimer = useRef(null);
@@ -70,6 +71,7 @@ export function Editor({ doc, onBack, versions }) {
 
   const handleExport = async (format) => {
     setIsExporting(format);
+    setShowMobileMenu(false);
     try {
       if (format === 'docx') {
         await exportToDocx(title, content);
@@ -91,7 +93,60 @@ export function Editor({ doc, onBack, versions }) {
       }, 1000);
     }
   };
+  const sidebarContent = (
+    <div className="space-y-6">
+      <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
+        <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><Download className="w-4 h-4 text-[#8B5E3C]" /> Export</h4>
+        <div className="space-y-3">
+          <button onClick={() => handleExport('docx')} disabled={!!isExporting} className={cn("bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center w-full py-3 h-auto text-sm", isExporting && "opacity-60 cursor-wait")}>
+            {isExporting === 'docx' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileType className="w-4 h-4 mr-2" />}
+            {isExporting === 'docx' ? 'Generating…' : 'Download DOCX'}
+          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => handleExport('pdf')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
+              {isExporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+              {isExporting === 'pdf' ? '…' : 'PDF'}
+            </button>
+            <button onClick={() => handleExport('txt')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
+              {isExporting === 'txt' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+              {isExporting === 'txt' ? '…' : 'TXT'}
+            </button>
+          </div>
+        </div>
+      </div>
 
+      <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
+        <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><BarChart3 className="w-4 h-4 text-[#8B5E3C]" /> Document Stats</h4>
+        <div className="space-y-4">
+          {[{label:'Words',value:stats.words.toLocaleString()},{label:'Chars',value:stats.chars.toLocaleString()},{label:'Read',value:`${stats.readTime}m`},{label:'Pages',value:stats.pages}].map(({label,value}) => (
+            <div key={label} className="flex justify-between items-center">
+              <span className="text-sm font-medium text-[#8C7B6B]">{label}</span>
+              <span className="text-sm font-bold text-[#3D2E1C]">{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
+        <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><RotateCcw className="w-4 h-4 text-[#8B5E3C]" /> History</h4>
+        {versions.length === 0 ? <p className="text-sm text-[#8C7B6B] italic">No snapshots yet.</p> : (
+          <div className="space-y-2">{versions.slice(0, 5).map(v => (
+            <button key={v.id} onClick={() => { if(confirm('Restore this snapshot?')) { setContent(v.content); setIsDirty(true); setShowMobileMenu(false); }}}
+              className="w-full group p-3 rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0] hover:border-[#8B5E3C]/30 transition-all text-left">
+              <p className="text-sm font-bold text-[#3D2E1C] truncate mb-1 group-hover:text-[#8B5E3C] transition-colors">{v.note || 'Auto Snapshot'}</p>
+              <p className="text-xs font-medium text-[#8C7B6B]">{v.createdAt?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+            </button>
+          ))}</div>
+        )}
+      </div>
+
+      {saveError && (
+        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-600 text-sm font-bold">
+          {saveError}
+        </div>
+      )}
+    </div>
+  );
   return (
     <div className="flex h-screen bg-[#F5F0E8] overflow-hidden relative">
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
@@ -131,9 +186,13 @@ export function Editor({ doc, onBack, versions }) {
             </div>
 
             <button onClick={handleSave} disabled={isSaving || !isDirty}
-              className={cn("bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center py-2.5 px-5 h-11", !isDirty && "opacity-50 grayscale cursor-not-allowed")}>
-              {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : saveSuccess ? <Check className="w-4 h-4 mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-              <span>{isSaving ? 'Saving' : 'Sync'}</span>
+              className={cn("bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center py-2.5 px-4 sm:px-5 h-11", !isDirty && "opacity-50 grayscale cursor-not-allowed")}>
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : saveSuccess ? <Check className="w-4 h-4 sm:mr-2" /> : <Save className="w-4 h-4 sm:mr-2" />}
+              <span className="hidden sm:inline">{isSaving ? 'Saving' : 'Sync'}</span>
+            </button>
+
+            <button onClick={() => setShowMobileMenu(true)} className="lg:hidden p-3 rounded-xl bg-[#FFFBF5] border border-[#E8DFD0] hover:bg-[#E8DFD0]/50 transition-all text-[#3D2E1C] h-11 flex items-center justify-center">
+              <Menu className="w-4 h-4" />
             </button>
           </div>
         </header>
@@ -175,60 +234,30 @@ export function Editor({ doc, onBack, versions }) {
 
       {/* Floating Control Panel (Right Sidebar) */}
       <aside className="w-80 p-6 flex-col overflow-y-auto shrink-0 hidden lg:flex relative z-10">
-        <div className="space-y-6">
-          
-          <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
-            <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><Download className="w-4 h-4 text-[#8B5E3C]" /> Export</h4>
-            <div className="space-y-3">
-              <button onClick={() => handleExport('docx')} disabled={!!isExporting} className={cn("bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center w-full py-3 h-auto text-sm", isExporting && "opacity-60 cursor-wait")}>
-                {isExporting === 'docx' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileType className="w-4 h-4 mr-2" />}
-                {isExporting === 'docx' ? 'Generating…' : 'Download DOCX'}
-              </button>
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => handleExport('pdf')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
-                  {isExporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-                  {isExporting === 'pdf' ? '…' : 'PDF'}
-                </button>
-                <button onClick={() => handleExport('txt')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
-                  {isExporting === 'txt' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                  {isExporting === 'txt' ? '…' : 'TXT'}
+        {sidebarContent}
+      </aside>
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {showMobileMenu && (
+          <>
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} 
+              className="fixed inset-0 bg-[#3D2E1C]/40 backdrop-blur-sm z-40 lg:hidden print:hidden" 
+              onClick={() => setShowMobileMenu(false)} />
+            <motion.aside initial={{x:300}} animate={{x:0}} exit={{x:300}} transition={{type:'spring', damping:30, stiffness:300}} 
+              className="fixed right-0 top-0 bottom-0 w-80 bg-[#F5F0E8] border-l border-[#E8DFD0] z-50 lg:hidden shadow-xl p-6 flex flex-col overflow-y-auto print:hidden">
+              
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="font-serif font-black text-lg text-[#3D2E1C]">Document Options</h3>
+                <button onClick={() => setShowMobileMenu(false)} className="p-2 rounded-xl bg-white border border-[#E8DFD0] shadow-sm text-[#3D2E1C]">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </div>
-          </div>
 
-          <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
-            <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><BarChart3 className="w-4 h-4 text-[#8B5E3C]" /> Document Stats</h4>
-            <div className="space-y-4">
-              {[{label:'Words',value:stats.words.toLocaleString()},{label:'Chars',value:stats.chars.toLocaleString()},{label:'Read',value:`${stats.readTime}m`},{label:'Pages',value:stats.pages}].map(({label,value}) => (
-                <div key={label} className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-[#8C7B6B]">{label}</span>
-                  <span className="text-sm font-bold text-[#3D2E1C]">{value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
-            <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><RotateCcw className="w-4 h-4 text-[#8B5E3C]" /> History</h4>
-            {versions.length === 0 ? <p className="text-sm text-[#8C7B6B] italic">No snapshots yet.</p> : (
-              <div className="space-y-2">{versions.slice(0, 5).map(v => (
-                <button key={v.id} onClick={() => { if(confirm('Restore this snapshot?')) { setContent(v.content); setIsDirty(true); }}}
-                  className="w-full group p-3 rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0] hover:border-[#8B5E3C]/30 transition-all text-left">
-                  <p className="text-sm font-bold text-[#3D2E1C] truncate mb-1 group-hover:text-[#8B5E3C] transition-colors">{v.note || 'Auto Snapshot'}</p>
-                  <p className="text-xs font-medium text-[#8C7B6B]">{v.createdAt?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                </button>
-              ))}</div>
-            )}
-          </div>
-
-          {saveError && (
-            <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-600 text-sm font-bold">
-              {saveError}
-            </div>
-          )}
-        </div>
-      </aside>
+              {sidebarContent}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
