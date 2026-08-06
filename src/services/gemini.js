@@ -6,8 +6,9 @@
 
 import { auth } from '../lib/firebase.js';
 
-const PROXY_OCR_URL  = "/api/ocr";
-const PROXY_CHAT_URL = "/api/chat";
+const API_BASE = import.meta.env.VITE_API_URL || '';
+const PROXY_OCR_URL  = `${API_BASE}/api/ocr`;
+const PROXY_CHAT_URL = `${API_BASE}/api/chat`;
 const OCR_MODEL        = "mistral-ocr-latest";
 const CHAT_MODEL       = "mistral-medium-latest";   // used for post-processing
 
