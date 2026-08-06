@@ -306,37 +306,7 @@ export async function exportToPdf(title, content) {
     return;
   }
 
-  // Mobile: bypass print dialog and directly download using html2pdf.js
-  if (window.innerWidth < 768) {
-    const html2pdf = (await import('html2pdf.js')).default;
-    
-    // Clone the element and append to body to avoid React overflow/clipping issues on mobile
-    const clone = printEl.cloneNode(true);
-    clone.className = "bg-white p-[15mm] text-black w-[800px]"; // Force fixed width so it renders like a desktop page
-    clone.style.position = 'absolute';
-    clone.style.top = '0';
-    clone.style.left = '0';
-    clone.style.zIndex = '-1';
-    document.body.appendChild(clone);
-    
-    // Crucial: wait a moment for the browser to actually paint the cloned node!
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    const opt = {
-      margin:       15,
-      filename:     `${title || 'Document'}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, logging: true, windowWidth: 800, scrollY: 0 },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
 
-    try {
-      await html2pdf().set(opt).from(clone).save();
-    } finally {
-      document.body.removeChild(clone);
-    }
-    return;
-  }
 
   // Laptop/Desktop logic: Create a properly sized hidden iframe
   // to calculate layout widths correctly for print
