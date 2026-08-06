@@ -306,213 +306,152 @@ export async function exportToPdf(title, content) {
     return;
   }
 
+  // Clone the node and append it to the body (outside of React's overflow-hidden containers)
+  const clone = printEl.cloneNode(true);
+  clone.id = 'active-print-container';
+  clone.className = 'md-preview'; // Reset classes to avoid Tailwind layout conflicts
+  clone.style.display = 'block';
+  clone.style.position = 'absolute';
+  clone.style.top = '0';
+  clone.style.left = '0';
+  clone.style.width = '100%';
+  clone.style.background = 'white';
+  clone.style.zIndex = '999999';
+  
+  // Re-insert the title into the clone for printing
+  clone.innerHTML = `
+    <div class="print-header">
+      <h1>${title}</h1>
+    </div>
+    ${printEl.innerHTML}
+  `;
 
+  document.body.appendChild(clone);
 
-  // Laptop/Desktop logic: Create a properly sized hidden iframe
-  // to calculate layout widths correctly for print
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.left = '-9999px';
-  iframe.style.top = '0';
-  iframe.style.width = '210mm';   // A4 width
-  iframe.style.height = '297mm';  // A4 height
-  iframe.style.border = '0';
-  iframe.style.opacity = '0';
-  iframe.style.pointerEvents = 'none';
-  document.body.appendChild(iframe);
+  // Inject print-specific CSS
+  const styleEl = document.createElement('style');
+  styleEl.innerHTML = `
+    /* Screen preview styling for the clone just in case it's visible for a split second */
+    #active-print-container {
+      padding: 20px;
+      opacity: 0.01; /* Nearly invisible on screen but prints fine */
+      pointer-events: none;
+    }
 
-  const iframeDoc = iframe.contentWindow?.document;
-  if (!iframeDoc) return;
+    /* Print media overrides */
+    @media print {
+      /* Hide the React application completely */
+      #root { display: none !important; }
+      
+      /* Reset body to allow normal scrolling/printing */
+      body { 
+        background: white !important; 
+        overflow: visible !important; 
+        height: auto !important; 
+        min-height: auto !important;
+      }
+      
+      /* Make the print container visible and static */
+      #active-print-container {
+        position: static !important;
+        display: block !important;
+        width: 100% !important;
+        opacity: 1 !important;
+        padding: 0 !important;
+      }
 
-  // Copy all stylesheets from the main document to the iframe
-  const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-    .map(el => el.outerHTML)
-    .join('\n');
+      /* Page setup */
+      @page {
+        size: A4;
+        margin: 15mm 18mm;
+      }
 
-  // Build the print document
-  iframeDoc.open();
-  iframeDoc.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>${title}</title>
-        ${styles}
-        <style>
-          /* Page setup — controls the actual printed page margins */
-          @page {
-            size: A4;
-            margin: 15mm 18mm;
-          }
+      /* Reset everything inside print container */
+      #active-print-container *, #active-print-container *::before, #active-print-container *::after {
+        box-sizing: border-box;
+      }
 
-          /* Reset everything */
-          *, *::before, *::after {
-            box-sizing: border-box;
-          }
+      /* Academic fonts */
+      #active-print-container, #active-print-container p, #active-print-container h1, #active-print-container h2, #active-print-container h3, #active-print-container th, #active-print-container td, #active-print-container li, #active-print-container blockquote {
+        font-family: "Times New Roman", Times, Georgia, serif !important;
+        color: black !important;
+      }
+      #active-print-container .katex, #active-print-container .katex * {
+        font-family: KaTeX_Main, KaTeX_Math, "Times New Roman", serif !important;
+      }
 
-          /* Times New Roman — classic academic document font */
-          body, p, div, span, li, h1, h2, h3, h4, th, td, blockquote {
-            font-family: "Times New Roman", Times, Georgia, serif !important;
-          }
-          .katex, .katex * {
-            font-family: KaTeX_Main, KaTeX_Math, "Times New Roman", serif !important;
-          }
+      /* Layout & Typography */
+      #active-print-container { 
+        font-size: 12pt;
+        line-height: 1.7;
+      }
 
-          body { 
-            background: white !important; 
-            margin: 0 !important; 
-            padding: 0 !important;
-            font-size: 12pt;
-            line-height: 1.7;
-            color: #1a1a1a;
-            width: 100%;
-          }
+      .print-header h1 { font-size: 24pt; font-weight: 800; border-bottom: 2px solid black; padding-bottom: 0.3em; margin-bottom: 1em; }
+      
+      #active-print-container .md-h1 { font-size: 22pt; font-weight: 800; margin: 1.2em 0 0.6em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
+      #active-print-container .md-h2 { font-size: 18pt; font-weight: 700; margin: 1em 0 0.5em; }
+      #active-print-container .md-h3 { font-size: 15pt; font-weight: 700; margin: 0.8em 0 0.4em; }
+      #active-print-container .md-h4 { font-size: 13pt; font-weight: 700; margin: 0.6em 0 0.3em; }
 
-          .md-preview {
-            width: 100%;
-            max-width: 100%;
-            padding: 0;
-            margin: 0;
-          }
+      #active-print-container .md-paragraph { margin-bottom: 0.8em; text-align: justify; }
+      #active-print-container strong { font-weight: bold; }
+      
+      #active-print-container .md-ul, #active-print-container .md-ol { margin: 0.8em 0; padding-left: 2em; }
+      #active-print-container li { margin-bottom: 0.4em; }
 
-          /* Headings */
-          .md-h1 { font-size: 22pt; font-weight: 800; margin: 1.2em 0 0.6em; border-bottom: 2px solid #1e293b; padding-bottom: 0.3em; }
-          .md-h2 { font-size: 18pt; font-weight: 700; margin: 1em 0 0.5em; }
-          .md-h3 { font-size: 15pt; font-weight: 700; margin: 0.8em 0 0.4em; }
-          .md-h4 { font-size: 13pt; font-weight: 700; margin: 0.6em 0 0.3em; }
+      #active-print-container .md-math-block {
+        page-break-inside: avoid;
+        margin: 1em 0;
+        padding: 0.8em;
+        background: #f9f9f9 !important;
+        border: 1px solid #ddd !important;
+        border-radius: 4px;
+        text-align: center;
+      }
+      
+      #active-print-container .md-code-inline {
+        font-family: monospace !important;
+        background: #f1f1f1 !important;
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+      
+      #active-print-container .md-code-block {
+        font-family: monospace !important;
+        background: #f1f1f1 !important;
+        padding: 1em;
+        border-radius: 4px;
+        font-size: 10pt;
+        margin: 1em 0;
+        page-break-inside: avoid;
+      }
+      #active-print-container .md-code-block * { font-family: monospace !important; }
 
-          /* Paragraphs */
-          .md-paragraph { margin-bottom: 0.8em; line-height: 1.7; font-size: 12pt; text-align: justify; }
+      #active-print-container .md-table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+      #active-print-container .md-table th, #active-print-container .md-table td { border: 1px solid #ccc; padding: 8px; }
+      #active-print-container .md-table th { background: #eee !important; font-weight: bold; }
 
-          /* Bold */
-          strong { font-weight: 700; }
+      #active-print-container .md-blockquote { border-left: 4px solid #ccc; margin: 1em 0; padding-left: 1em; color: #555 !important; }
+      #active-print-container .md-hr { border: none; border-top: 1px solid #ccc; margin: 1.5em 0; }
+      
+      #active-print-container .md-image { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+      
+      /* Hide top header/footer URLs that browsers insert */
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  `;
+  document.head.appendChild(styleEl);
 
-          /* Lists */
-          .md-ul, .md-ol { margin: 0.8em 0; padding-left: 1.8em; font-size: 12pt; }
-          .md-ul li, .md-ol li { margin-bottom: 0.4em; line-height: 1.7; }
+  // Wait a moment for styles to apply
+  await new Promise(r => setTimeout(r, 100));
 
-          /* Math blocks */
-          .md-math-block {
-            page-break-inside: avoid;
-            margin: 1em 0 !important;
-            padding: 0.8em !important;
-            background: #f8fafc !important;
-            border: 1px solid #e2e8f0 !important;
-            border-radius: 6px !important;
-            font-size: 11pt !important;
-            overflow-x: hidden;
-          }
+  // Trigger the print dialog!
+  window.print();
 
-          .md-math-block .katex-display, .md-math-block .katex {
-            white-space: normal !important;
-            word-wrap: break-word !important;
-            overflow-wrap: break-word !important;
-          }
-
-          /* Inline code */
-          .md-code-inline {
-            font-family: "Fira Code", "Consolas", monospace !important;
-            background: #f1f5f9;
-            padding: 1px 5px;
-            border-radius: 3px;
-            font-size: 0.9em;
-          }
-
-          /* Code blocks */
-          .md-code-block {
-            font-family: "Fira Code", "Consolas", monospace !important;
-            background: #1e293b;
-            color: #e2e8f0;
-            padding: 0.8em;
-            border-radius: 6px;
-            font-size: 10pt;
-            margin: 1em 0;
-            page-break-inside: avoid;
-          }
-          .md-code-block * { font-family: "Fira Code", "Consolas", monospace !important; }
-
-          /* Tables */
-          .md-table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 11pt; }
-          .md-table th, .md-table td { border: 1px solid #cbd5e1; padding: 8px 12px; }
-          .md-table th { background: #f1f5f9; font-weight: 700; }
-
-          /* Blockquotes */
-          .md-blockquote { border-left: 4px solid #94a3b8; margin: 1em 0; padding: 0.4em 1em; color: #475569; font-size: 12pt; }
-
-          /* Page separators — content flows continuously, no forced page breaks */
-          .md-page-separator {
-            display: none !important;
-            height: 0;
-            margin: 0;
-            padding: 0;
-            visibility: hidden;
-            border: none;
-          }
-
-          /* HR */
-          .md-hr { border: none; border-top: 2px solid #cbd5e1; margin: 1.5em 0; }
-
-          /* Images */
-          .md-image {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            margin: 1em auto;
-            display: block;
-          }
-
-          /* Image Placeholder */
-          .md-image-placeholder {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            padding: 0.8em;
-            margin: 1em auto;
-            max-width: 300px;
-            background-color: #f1f5f9;
-            border: 2px dashed #cbd5e1;
-            border-radius: 8px;
-            color: #64748b;
-            font-weight: 700;
-            font-size: 9pt;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-          }
-          .md-image-placeholder svg {
-            width: 16px;
-            height: 16px;
-          }
-
-          /* Header/footer bar at top of print — hide it */
-          @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="md-preview">
-          ${printEl.innerHTML}
-        </div>
-        <script>
-          window.onload = async () => {
-            try {
-              if (document.fonts && document.fonts.ready) {
-                await document.fonts.ready;
-              }
-            } catch (e) {
-              console.error("Error waiting for fonts", e);
-            }
-            
-            setTimeout(() => {
-              window.print();
-              setTimeout(() => {
-                window.frameElement.remove();
-              }, 100);
-            }, 500);
-          };
-        </script>
-      </body>
-    </html>
-  `);
-  iframeDoc.close();
+  // Cleanup after printing (using a timeout so the print dialog captures it before deletion)
+  setTimeout(() => {
+    if (document.body.contains(clone)) document.body.removeChild(clone);
+    if (document.head.contains(styleEl)) document.head.removeChild(styleEl);
+  }, 2000);
 }
