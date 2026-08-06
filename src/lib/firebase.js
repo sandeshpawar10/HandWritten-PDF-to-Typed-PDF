@@ -21,7 +21,7 @@ export const signInWithGoogle = async () => {
     // Try popup first — works when domain is authorized and popups aren't blocked
     const result = await signInWithPopup(auth, googleProvider);
     return result;
-  } catch (error: any) {
+  } catch (error) {
     const code = error?.code || '';
     
     // These errors mean popup was blocked or domain isn't authorized — fall back to redirect

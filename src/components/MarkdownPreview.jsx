@@ -1,15 +1,11 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-
-interface MarkdownPreviewProps {
-  content: string;
-}
 
 // ─────────────────────────────────────────────
 //  HTML escape (for non-math text only)
 // ─────────────────────────────────────────────
-function escapeHtml(str: string): string {
+function escapeHtml(str) {
   return str
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -20,7 +16,7 @@ function escapeHtml(str: string): string {
 // ─────────────────────────────────────────────
 //  KaTeX renderer helpers
 // ─────────────────────────────────────────────
-function renderInlineMath(tex: string): string {
+function renderInlineMath(tex) {
   try {
     if (!katex) return `<code class="md-code-inline">${escapeHtml(tex)}</code>`;
     return katex.renderToString(tex, { 
@@ -34,7 +30,7 @@ function renderInlineMath(tex: string): string {
   }
 }
 
-function renderDisplayMath(tex: string): string {
+function renderDisplayMath(tex) {
   const cleanTex = tex.trim();
   if (!cleanTex) return "";
   try {
@@ -57,16 +53,16 @@ function renderDisplayMath(tex: string): string {
 //    2. Escape HTML on plain-text segments only
 //    3. Apply bold/italic/code on plain segments
 // ─────────────────────────────────────────────
-function inlineFormat(raw: string): string {
+function inlineFormat(raw) {
   if (!raw) return "";
   
-  const segments: Array<{ type: "math-display" | "math-inline" | "text"; content: string }> = [];
+  const segments = [];
   
   // Pattern: $$...$$ (display) | $...$ (inline)
   // We use [\s\S]+? to allow multiline math if the input string contains newlines (from paragraph joining)
   const mathRe = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g;
   let lastIdx = 0;
-  let m: RegExpExecArray | null;
+  let m;
 
   while ((m = mathRe.exec(raw)) !== null) {
     if (m.index > lastIdx) {
@@ -132,10 +128,10 @@ function inlineFormat(raw: string): string {
 // ─────────────────────────────────────────────
 //  Table parser
 // ─────────────────────────────────────────────
-function parseTable(tableLines: string[]): string {
+function parseTable(tableLines) {
   if (tableLines.length < 2) return `<p class="md-paragraph">${tableLines.map(l => inlineFormat(l)).join("<br/>")}</p>`;
   
-  const parseRow = (row: string) =>
+  const parseRow = (row) =>
     row.replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim());
 
   const headers = parseRow(tableLines[0]);
@@ -170,21 +166,21 @@ function parseTable(tableLines: string[]): string {
 // ─────────────────────────────────────────────
 //  Main parser
 // ─────────────────────────────────────────────
-function parseMarkdown(md: string): string {
+function parseMarkdown(md) {
   let cleanMd = md;
 
   const lines = cleanMd.split("\n");
-  const out: string[] = [];
+  const out = [];
   let i = 0;
   
   let inCodeBlock  = false;
-  let codeContent: string[] = [];
+  let codeContent = [];
   let codeLang     = "";
   
   let inMathBlock  = false;
-  let mathContent: string[] = [];
+  let mathContent = [];
   
-  let inList: "ul" | "ol" | null = null;
+  let inList = null;
 
   const closeList = () => {
     if (inList) { 
@@ -260,7 +256,7 @@ function parseMarkdown(md: string): string {
     // ── Table ──
     if (trimmed.includes("|") && i + 1 < lines.length && lines[i + 1].trim().match(/^\|?[\s\-:|]+\|/)) {
       closeList();
-      const tLines: string[] = [];
+      const tLines = [];
       while (i < lines.length && lines[i].trim().includes("|")) { tLines.push(lines[i].trim()); i++; }
       out.push(parseTable(tLines));
       continue;
@@ -278,7 +274,7 @@ function parseMarkdown(md: string): string {
     // ── Blockquote ──
     if (trimmed.startsWith(">")) {
       closeList();
-      const qLines: string[] = [];
+      const qLines = [];
       while (i < lines.length && lines[i].trim().startsWith(">")) {
         qLines.push(lines[i].trim().replace(/^>\s?/, "")); i++;
       }
@@ -307,7 +303,7 @@ function parseMarkdown(md: string): string {
 
     // ── Paragraph (collect consecutive plain lines) ──
     closeList();
-    const pLines: string[] = [];
+    const pLines = [];
     while (
       i < lines.length &&
       lines[i].trim() !== "" &&
@@ -353,7 +349,7 @@ function parseMarkdown(md: string): string {
 // ─────────────────────────────────────────────
 //  Component
 // ─────────────────────────────────────────────
-export function MarkdownPreview({ content }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content }) {
   const html = useMemo(() => parseMarkdown(content), [content]);
   return <div className="md-preview" dangerouslySetInnerHTML={{ __html: html }} />;
 }

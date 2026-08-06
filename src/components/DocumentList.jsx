@@ -1,22 +1,13 @@
-import React, { useState } from 'react';
-import { FileText, FileImage, ChevronRight, Trash2, Clock, ArrowUpDown, Table2, Layers } from 'lucide-react';
+import { useState } from 'react';
+import { FileText, FileImage, ChevronRight, Trash2, Table2, Layers } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Document } from '../types';
-import { deleteDocument } from '../services/documents';
 import { cn } from '../lib/utils';
+import { deleteDocument } from '../services/documents';
 
-interface DocumentListProps {
-  documents: Document[];
-  onSelect: (doc: Document) => void;
-  selectedId?: string;
-}
+export function DocumentList({ documents, onSelect }) {
+  const [sortBy, setSortBy] = useState('date');
 
-type SortKey = 'date' | 'name' | 'words';
-
-export function DocumentList({ documents, onSelect, selectedId }: DocumentListProps) {
-  const [sortBy, setSortBy] = useState<SortKey>('date');
-
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e, id) => {
     e.stopPropagation();
     if (confirm('Delete this asset permanently?')) await deleteDocument(id);
   };
@@ -51,7 +42,7 @@ export function DocumentList({ documents, onSelect, selectedId }: DocumentListPr
       <div className="flex items-center gap-3 justify-end">
         <span className="text-[10px] font-bold text-text-dim uppercase tracking-[0.2em] mr-2">Sort By</span>
         <div className="flex items-center p-1 rounded-2xl glass border-white/5">
-          {(['date', 'name', 'words'] as SortKey[]).map(key => (
+          {['date', 'name', 'words'].map(key => (
             <button key={key} onClick={() => setSortBy(key)}
               className={cn("px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all uppercase tracking-wider",
                 sortBy === key ? "bg-accent/10 text-accent" : "text-text-dim hover:text-white")}>

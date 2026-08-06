@@ -1,38 +1,31 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Save, ArrowLeft, Loader2, Check, CheckCircle2, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Save, ArrowLeft, Loader2, Check, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Document, DocumentVersion } from '../types';
 import { updateDocument, saveVersion } from '../services/documents';
 import { exportToDocx, exportToPdf, exportToTxt } from '../services/export';
 import { MarkdownPreview } from './MarkdownPreview';
 import { cn } from '../lib/utils';
 
-interface EditorProps {
-  document: Document;
-  onBack: () => void;
-  versions: DocumentVersion[];
-}
-
-export function Editor({ document, onBack, versions }: EditorProps) {
-  const [content, setContent] = useState(document.content);
-  const [title, setTitle] = useState(document.title);
+export function Editor({ doc, onBack, versions }) {
+  const [content, setContent] = useState(doc.content);
+  const [title, setTitle] = useState(doc.title);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [saveError, setSaveError] = useState(null);
+  const [lastSaved, setLastSaved] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
-  const [mode, setMode] = useState<'preview' | 'edit'>('preview');
-  const [isExporting, setIsExporting] = useState<string | null>(null); // tracks which format is exporting
+  const [mode, setMode] = useState('preview');
+  const [isExporting, setIsExporting] = useState(null); // tracks which format is exporting
   const [showPrintPreview, setShowPrintPreview] = useState(false);
 
   // Auto-save timer ref
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveTimer = useRef(null);
 
   useEffect(() => {
-    setContent(document.content);
-    setTitle(document.title);
+    setContent(doc.content);
+    setTitle(doc.title);
     setIsDirty(false);
-  }, [document]);
+  }, [doc]);
 
   // Memoized stats — only recalculates when content changes, not on every render
   const stats = useMemo(() => {
@@ -50,18 +43,18 @@ export function Editor({ document, onBack, versions }: EditorProps) {
     if (isSaving) return;
     setIsSaving(true); setSaveError(null); setSaveSuccess(false);
     try {
-      await updateDocument(document.id, { content, title });
-      await saveVersion(document.id, document.userId, content, 'Manual save');
+      await updateDocument(doc.id, { content, title });
+      await saveVersion(doc.id, doc.userId, content, 'Manual save');
       setLastSaved(new Date());
       setIsDirty(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err: any) {
+    } catch {
       setSaveError('Save failed.');
     } finally {
       setIsSaving(false);
     }
-  }, [content, title, document.id, document.userId, isSaving]);
+  }, [content, title, doc.id, doc.userId, isSaving]);
 
   // Auto-save: debounced 5s after last edit
   useEffect(() => {
@@ -75,7 +68,7 @@ export function Editor({ document, onBack, versions }: EditorProps) {
     };
   }, [content, title, isDirty, handleSave]);
 
-  const handleExport = async (format: 'docx' | 'pdf' | 'txt') => {
+  const handleExport = async (format) => {
     setIsExporting(format);
     try {
       if (format === 'docx') {
@@ -244,7 +237,7 @@ export function Editor({ document, onBack, versions }: EditorProps) {
   );
 }
 
-function AnimatedBadge({ isDirty, saveSuccess }: { isDirty: boolean; saveSuccess: boolean }) {
+function AnimatedBadge({ isDirty, saveSuccess }) {
   if (!isDirty && !saveSuccess) return null;
   return (
     <motion.div initial={{opacity:0, x:-10}} animate={{opacity:1, x:0}}

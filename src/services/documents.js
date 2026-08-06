@@ -13,7 +13,6 @@ import {
   FirestoreError
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { Document, DocumentVersion } from '../types';
 
 const COLLECTION_NAME = 'documents';
 
@@ -21,12 +20,12 @@ const COLLECTION_NAME = 'documents';
  * According to system instructions, when a Firestore operation fails due to "Missing or insufficient permissions,"
  * we must throw a JSON string of FirestoreErrorInfo.
  */
-function handleFirestoreError(error: any, operationType: string, path: string | null = null) {
+function handleFirestoreError(error, operationType, path = null) {
   if (error instanceof FirestoreError && error.code === 'permission-denied') {
     const user = auth.currentUser;
     const errorInfo = {
       error: error.message,
-      operationType: operationType as any,
+      operationType,
       path,
       authInfo: {
         userId: user?.uid || 'anonymous',
@@ -45,7 +44,7 @@ function handleFirestoreError(error: any, operationType: string, path: string | 
   throw error;
 }
 
-export function subscribeToDocuments(userId: string, callback: (docs: Document[]) => void) {
+export function subscribeToDocuments(userId, callback) {
   const q = query(
     collection(db, COLLECTION_NAME),
     where('userId', '==', userId),
@@ -56,7 +55,7 @@ export function subscribeToDocuments(userId: string, callback: (docs: Document[]
     const docs = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
-    } as Document));
+    }));
     callback(docs);
   }, (error) => {
     console.error("Firestore Subscribe Error:", error);
@@ -68,7 +67,7 @@ export function subscribeToDocuments(userId: string, callback: (docs: Document[]
   });
 }
 
-export async function createDocument(userId: string, title: string, content: string, originalFileName?: string) {
+export async function createDocument(userId, title, content, originalFileName) {
   return addDoc(collection(db, COLLECTION_NAME), {
     userId,
     title,
@@ -80,7 +79,7 @@ export async function createDocument(userId: string, title: string, content: str
   });
 }
 
-export async function updateDocument(documentId: string, updates: Partial<Document>, saveHistory = true, note?: string) {
+export async function updateDocument(documentId, updates, saveHistory = true, note) {
   const docRef = doc(db, COLLECTION_NAME, documentId);
   
   if (saveHistory) {
@@ -96,7 +95,7 @@ export async function updateDocument(documentId: string, updates: Partial<Docume
   });
 }
 
-export async function saveVersion(documentId: string, userId: string, content: string, note?: string) {
+export async function saveVersion(documentId, userId, content, note) {
   return addDoc(collection(db, COLLECTION_NAME, documentId, 'versions'), {
     documentId,
     userId,
@@ -106,7 +105,7 @@ export async function saveVersion(documentId: string, userId: string, content: s
   });
 }
 
-export function subscribeToVersions(documentId: string, userId: string, callback: (versions: DocumentVersion[]) => void) {
+export function subscribeToVersions(documentId, userId, callback) {
   const q = query(
     collection(db, COLLECTION_NAME, documentId, 'versions'),
     where('userId', '==', userId), // Rule requires this filter for list
@@ -117,7 +116,7 @@ export function subscribeToVersions(documentId: string, userId: string, callback
     const versions = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
-    } as DocumentVersion));
+    }));
     callback(versions);
   }, (error) => {
     console.error("Firestore Version Subscribe Error:", error);
@@ -129,6 +128,6 @@ export function subscribeToVersions(documentId: string, userId: string, callback
   });
 }
 
-export async function deleteDocument(documentId: string) {
+export async function deleteDocument(documentId) {
   return deleteDoc(doc(db, COLLECTION_NAME, documentId));
 }

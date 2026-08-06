@@ -1,34 +1,26 @@
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileImage, FileText, Loader2, X, Download, AlertCircle, CheckCircle2, Clock, RotateCw, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { ConversionJob } from '../types';
 import { exportToPdf } from '../services/export';
 
-interface FileUploadProps {
-  onFilesAdded: (files: File[]) => void;
-  jobs: ConversionJob[];
-  onRemoveJob: (id: string) => void;
-}
-
-function getFileIcon(fileName: string) {
+function getFileIcon(fileName) {
   const ext = fileName.split('.').pop()?.toLowerCase();
   if (ext === 'pdf') return FileText;
   return FileImage;
 }
 
-export function FileUpload({ onFilesAdded, jobs, onRemoveJob }: FileUploadProps) {
-  const onDrop = useCallback((files: File[]) => onFilesAdded(files), [onFilesAdded]);
+export function FileUpload({ onFilesAdded, jobs, onRemoveJob }) {
+  const onDrop = useCallback((files) => onFilesAdded(files), [onFilesAdded]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'], 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] },
     multiple: true,
-  } as any);
+  });
 
   const completed = jobs.filter(j => j.status === 'completed').length;
-  const failed = jobs.filter(j => j.status === 'failed').length;
   const processing = jobs.filter(j => j.status === 'converting' || j.status === 'pending').length;
   const total = jobs.length;
 
@@ -127,7 +119,7 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob }: FileUploadProps)
                       </div>
 
                       {job.status === 'completed' && job.content && (
-                        <button onClick={() => exportToPdf(job.file.name.replace(/\.[^/.]+$/, ''), job.content!)}
+                        <button onClick={() => exportToPdf(job.file.name.replace(/\.[^/.]+$/, ''), job.content)}
                           className="btn-glass p-2.5 rounded-xl hover:text-accent border-white/5">
                           <Download className="w-4 h-4" />
                         </button>

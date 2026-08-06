@@ -7,18 +7,9 @@ import {
 
 // ── Markdown parser helpers ──
 
-interface ParsedBlock {
-  type: 'heading' | 'paragraph' | 'table' | 'list-item' | 'blockquote' | 'code' | 'math' | 'separator' | 'hr' | 'empty';
-  level?: number;        // heading level 1-6
-  ordered?: boolean;     // list type
-  text?: string;         // text content
-  rows?: string[][];     // table rows
-  lines?: string[];      // code block lines
-}
-
-function parseMarkdownBlocks(content: string): ParsedBlock[] {
+function parseMarkdownBlocks(content) {
   const lines = content.split('\n');
-  const blocks: ParsedBlock[] = [];
+  const blocks = [];
   let i = 0;
 
   while (i < lines.length) {
@@ -27,7 +18,7 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
 
     // Code blocks
     if (trimmed.startsWith('```')) {
-      const codeLines: string[] = [];
+      const codeLines = [];
       i++;
       while (i < lines.length && !lines[i].trim().startsWith('```')) {
         codeLines.push(lines[i]);
@@ -40,7 +31,7 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
 
     // Math blocks $$
     if (trimmed === '$$') {
-      const mathLines: string[] = [];
+      const mathLines = [];
       i++;
       while (i < lines.length && lines[i].trim() !== '$$') {
         mathLines.push(lines[i]);
@@ -84,7 +75,7 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
 
     // Table: line has | and next line is separator row
     if (trimmed.includes('|') && i + 1 < lines.length && lines[i + 1].trim().match(/^\|?[\s\-:|]+\|/)) {
-      const tableLines: string[] = [];
+      const tableLines = [];
       while (i < lines.length && lines[i].trim().includes('|')) {
         tableLines.push(lines[i].trim());
         i++;
@@ -106,7 +97,7 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
 
     // Blockquote
     if (trimmed.startsWith('>')) {
-      const qLines: string[] = [];
+      const qLines = [];
       while (i < lines.length && lines[i].trim().startsWith('>')) {
         qLines.push(lines[i].trim().replace(/^>\s?/, ''));
         i++;
@@ -144,16 +135,8 @@ function parseMarkdownBlocks(content: string): ParsedBlock[] {
   return blocks;
 }
 
-function stripInline(text: string): string {
-  return text.replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
-    .replace(/`([^`]+)`/g, '$1');
-}
-
-function parseInlineRuns(text: string): TextRun[] {
-  const runs: TextRun[] = [];
+function parseInlineRuns(text) {
+  const runs = [];
   const regex = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\$[^\$]+\$|\*[^*]+\*|_[^_]+_|[^*_`\$]+)/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -181,14 +164,14 @@ function parseInlineRuns(text: string): TextRun[] {
 
 // ── Export functions ──
 
-export async function exportToTxt(title: string, content: string) {
+export async function exportToTxt(title, content) {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   saveAs(blob, `${title}.txt`);
 }
 
-export async function exportToDocx(title: string, content: string) {
+export const exportToDocx = async (title, content) => {
   const blocks = parseMarkdownBlocks(content);
-  const children: (Paragraph | Table)[] = [];
+  const children = [];
 
   // Add document title
   children.push(new Paragraph({
@@ -197,7 +180,7 @@ export async function exportToDocx(title: string, content: string) {
     spacing: { after: 400 },
   }));
 
-  const headingMap: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
+  const headingMap = {
     1: HeadingLevel.HEADING_1, 2: HeadingLevel.HEADING_2, 3: HeadingLevel.HEADING_3,
     4: HeadingLevel.HEADING_4, 5: HeadingLevel.HEADING_5, 6: HeadingLevel.HEADING_6,
   };
@@ -305,7 +288,7 @@ export async function exportToDocx(title: string, content: string) {
     numbering: {
       config: [{
         reference: 'default-numbering',
-        levels: [{ level: 0, format: 'decimal' as any, text: '%1.', alignment: AlignmentType.START }],
+        levels: [{ level: 0, format: 'decimal', text: '%1.', alignment: AlignmentType.START }],
       }],
     },
     sections: [{ properties: {}, children }],
@@ -315,23 +298,25 @@ export async function exportToDocx(title: string, content: string) {
   saveAs(blob, `${title}.docx`);
 }
 
-export async function exportToPdf(title: string, _content: string) {
+export async function exportToPdf(title, content) {
   // Find the dedicated print container
   const printEl = document.getElementById('pdf-export-content');
   if (!printEl) {
-    // Fallback to simple print if container not found
     window.print();
     return;
   }
 
-  // Create a hidden iframe
+  // Create a properly sized hidden iframe — the browser needs real dimensions
+  // to calculate layout widths correctly for print
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
+  iframe.style.left = '-9999px';
+  iframe.style.top = '0';
+  iframe.style.width = '210mm';   // A4 width
+  iframe.style.height = '297mm';  // A4 height
   iframe.style.border = '0';
+  iframe.style.opacity = '0';
+  iframe.style.pointerEvents = 'none';
   document.body.appendChild(iframe);
 
   const iframeDoc = iframe.contentWindow?.document;
@@ -352,11 +337,21 @@ export async function exportToPdf(title: string, _content: string) {
         ${styles}
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
         <style>
-          /* Force a single consistent font on text elements, but exclude KaTeX to prevent breaking math symbols */
+          /* Page setup — controls the actual printed page margins */
+          @page {
+            size: A4;
+            margin: 15mm 18mm;
+          }
+
+          /* Reset everything */
+          *, *::before, *::after {
+            box-sizing: border-box;
+          }
+
+          /* Force a single consistent font, but exclude KaTeX */
           body, p, div, span, li, h1, h2, h3, h4, th, td, blockquote {
             font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
           }
-          /* Exception: KaTeX math symbols must keep their own font */
           .katex, .katex * {
             font-family: KaTeX_Main, KaTeX_Math, "Times New Roman", serif !important;
           }
@@ -364,41 +359,48 @@ export async function exportToPdf(title: string, _content: string) {
           body { 
             background: white !important; 
             margin: 0 !important; 
-            padding: 18mm !important;
-            font-size: 20pt; /* Increased base font size for maximum readability */
-            line-height: 1.8;
-            color: #0f172a;
+            padding: 0 !important;
+            font-size: 12pt;
+            line-height: 1.7;
+            color: #1a1a1a;
+            width: 100%;
           }
 
-          /* Headings - scaled up */
-          .md-h1 { font-size: 32pt; font-weight: 800; margin: 2rem 0 1rem; border-bottom: 3px solid #1e293b; padding-bottom: 0.5rem; }
-          .md-h2 { font-size: 28pt; font-weight: 700; margin: 1.8rem 0 0.8rem; }
-          .md-h3 { font-size: 24pt; font-weight: 700; margin: 1.5rem 0 0.6rem; }
-          .md-h4 { font-size: 22pt; font-weight: 700; margin: 1.2rem 0 0.5rem; }
+          .md-preview {
+            width: 100%;
+            max-width: 100%;
+            padding: 0;
+            margin: 0;
+          }
+
+          /* Headings */
+          .md-h1 { font-size: 22pt; font-weight: 800; margin: 1.2em 0 0.6em; border-bottom: 2px solid #1e293b; padding-bottom: 0.3em; }
+          .md-h2 { font-size: 18pt; font-weight: 700; margin: 1em 0 0.5em; }
+          .md-h3 { font-size: 15pt; font-weight: 700; margin: 0.8em 0 0.4em; }
+          .md-h4 { font-size: 13pt; font-weight: 700; margin: 0.6em 0 0.3em; }
 
           /* Paragraphs */
-          .md-paragraph { margin-bottom: 1rem; line-height: 1.8; font-size: 20pt; }
+          .md-paragraph { margin-bottom: 0.8em; line-height: 1.7; font-size: 12pt; text-align: justify; }
 
           /* Bold */
           strong { font-weight: 700; }
 
           /* Lists */
-          .md-ul, .md-ol { margin: 1rem 0; padding-left: 2rem; font-size: 20pt; }
-          .md-ul li, .md-ol li { margin-bottom: 0.6rem; line-height: 1.8; }
+          .md-ul, .md-ol { margin: 0.8em 0; padding-left: 1.8em; font-size: 12pt; }
+          .md-ul li, .md-ol li { margin-bottom: 0.4em; line-height: 1.7; }
 
           /* Math blocks */
           .md-math-block {
             page-break-inside: avoid;
-            margin: 1.5rem 0 !important;
-            padding: 1rem !important;
+            margin: 1em 0 !important;
+            padding: 0.8em !important;
             background: #f8fafc !important;
             border: 1px solid #e2e8f0 !important;
-            border-radius: 8px !important;
-            font-size: 18pt !important;
+            border-radius: 6px !important;
+            font-size: 11pt !important;
             overflow-x: hidden;
           }
 
-          /* Force line breaking on long equations */
           .md-math-block .katex-display, .md-math-block .katex {
             white-space: normal !important;
             word-wrap: break-word !important;
@@ -409,8 +411,8 @@ export async function exportToPdf(title: string, _content: string) {
           .md-code-inline {
             font-family: "Fira Code", "Consolas", monospace !important;
             background: #f1f5f9;
-            padding: 2px 6px;
-            border-radius: 4px;
+            padding: 1px 5px;
+            border-radius: 3px;
             font-size: 0.9em;
           }
 
@@ -419,26 +421,25 @@ export async function exportToPdf(title: string, _content: string) {
             font-family: "Fira Code", "Consolas", monospace !important;
             background: #1e293b;
             color: #e2e8f0;
-            padding: 1rem;
-            border-radius: 8px;
-            font-size: 17pt;
-            margin: 1.5rem 0;
+            padding: 0.8em;
+            border-radius: 6px;
+            font-size: 10pt;
+            margin: 1em 0;
             page-break-inside: avoid;
           }
           .md-code-block * { font-family: "Fira Code", "Consolas", monospace !important; }
 
           /* Tables */
-          .md-table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 18pt; }
-          .md-table th, .md-table td { border: 1px solid #cbd5e1; padding: 10px 14px; }
+          .md-table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 11pt; }
+          .md-table th, .md-table td { border: 1px solid #cbd5e1; padding: 8px 12px; }
           .md-table th { background: #f1f5f9; font-weight: 700; }
 
           /* Blockquotes */
-          .md-blockquote { border-left: 5px solid #94a3b8; margin: 1.5rem 0; padding: 0.5rem 1rem; color: #475569; font-size: 20pt; }
+          .md-blockquote { border-left: 4px solid #94a3b8; margin: 1em 0; padding: 0.4em 1em; color: #475569; font-size: 12pt; }
 
-          /* Page separators */
+          /* Page separators — content flows continuously, no forced page breaks */
           .md-page-separator {
-            page-break-before: always;
-            break-before: page;
+            display: none !important;
             height: 0;
             margin: 0;
             padding: 0;
@@ -447,16 +448,15 @@ export async function exportToPdf(title: string, _content: string) {
           }
 
           /* HR */
-          .md-hr { border: none; border-top: 2px solid #cbd5e1; margin: 2rem 0; }
+          .md-hr { border: none; border-top: 2px solid #cbd5e1; margin: 1.5em 0; }
 
           /* Images */
           .md-image {
             max-width: 100%;
             height: auto;
-            border-radius: 12px;
-            margin: 1.5rem auto;
+            border-radius: 8px;
+            margin: 1em auto;
             display: block;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
           }
 
           /* Image Placeholder */
@@ -464,22 +464,27 @@ export async function exportToPdf(title: string, _content: string) {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 12px;
-            padding: 1rem;
-            margin: 1.5rem auto;
-            max-width: 400px;
+            gap: 10px;
+            padding: 0.8em;
+            margin: 1em auto;
+            max-width: 300px;
             background-color: #f1f5f9;
             border: 2px dashed #cbd5e1;
-            border-radius: 12px;
+            border-radius: 8px;
             color: #64748b;
             font-weight: 700;
-            font-size: 11pt;
+            font-size: 9pt;
             text-transform: uppercase;
             letter-spacing: 2px;
           }
           .md-image-placeholder svg {
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
+          }
+
+          /* Header/footer bar at top of print — hide it */
+          @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           }
         </style>
       </head>
@@ -488,7 +493,6 @@ export async function exportToPdf(title: string, _content: string) {
           ${printEl.innerHTML}
         </div>
         <script>
-          // Ensure fonts are fully loaded before triggering print to prevent font mismatch on different pages
           window.onload = async () => {
             try {
               if (document.fonts && document.fonts.ready) {

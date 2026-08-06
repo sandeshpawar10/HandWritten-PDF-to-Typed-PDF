@@ -14,15 +14,14 @@ const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024;
 // ─────────────────────────────────────────────
 //  API key
 // ─────────────────────────────────────────────
-function getApiKey(): string {
+function getApiKey() {
   const key =
-    (typeof window !== "undefined" && localStorage.getItem("TYPEDDOC_MISTRAL_API_KEY")) ||
-    (typeof process !== "undefined" && (process as any).env?.MISTRAL_API_KEY) ||
-    (import.meta as any).env?.VITE_MISTRAL_API_KEY ||
+    (typeof process !== "undefined" && process.env?.MISTRAL_API_KEY) ||
+    import.meta.env?.VITE_MISTRAL_API_KEY ||
     null;
 
   if (!key) throw new Error(
-    "NO_API_KEY: No Mistral API key found. Go to Settings and add your key from https://console.mistral.ai/api-keys"
+    "NO_API_KEY: No Mistral API key found. Please add VITE_MISTRAL_API_KEY to your .env file."
   );
   return key;
 }
@@ -34,25 +33,25 @@ const MAX_RETRIES   = 4;
 const BASE_DELAY_MS = 5_000;
 const MAX_DELAY_MS  = 60_000;
 
-function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function isRateLimit(status: number, body: any) {
+function isRateLimit(status, body) {
   if (status === 429) return true;
   const msg = (body?.message || body?.error?.message || "").toLowerCase();
   return msg.includes("rate limit") || msg.includes("quota") || msg.includes("too many");
 }
 
-function retryDelay(headers: Headers, attempt: number) {
+function retryDelay(headers, attempt) {
   const ra = headers.get("retry-after");
   if (ra) { const s = parseInt(ra, 10); if (!isNaN(s)) return Math.min(s * 1000 + 500, MAX_DELAY_MS); }
   return Math.min(BASE_DELAY_MS * 2 ** attempt + Math.random() * 1000, MAX_DELAY_MS);
 }
 
 async function apiFetch(
-  url: string, body: object,
-  label: string, onProgress?: (s: string) => void
-): Promise<any> {
-  let lastErr: any;
+  url, body,
+  label, onProgress
+) {
+  let lastErr;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(url, {
       method: "POST",
@@ -81,14 +80,14 @@ async function apiFetch(
 //  Step 1 — Raw OCR via Mistral OCR endpoint
 // ─────────────────────────────────────────────
 async function runOCR(
-  document: { type: string; [k: string]: any },
-  label: string,
-  onProgress?: (s: string) => void
-): Promise<{ markdown: string; imageMap: Record<string, string> }> {
+  document,
+  label,
+  onProgress
+) {
   const data = await apiFetch(MISTRAL_OCR_URL, { model: OCR_MODEL, document, include_image_base64: true }, label, onProgress);
-  const pages: Array<{ markdown: string, images?: Array<{ id: string, image_base64: string }> }> = data.pages ?? [];
+  const pages = data.pages ?? [];
   
-  const imageMap: Record<string, string> = {};
+  const imageMap = {};
   
   const markdown = pages.map((p, i) => {
     // Extract base64 images into a separate map so we don't bloat the LLM context
@@ -154,14 +153,14 @@ Your job is to REFORMAT it — do NOT change the words, only improve the Markdow
 - No preamble, no explanation, no code fences around the whole output`;
 
 async function postProcess(
-  rawMarkdown: string,
-  onProgress?: (s: string) => void
-): Promise<string> {
+  rawMarkdown,
+  onProgress
+) {
   onProgress?.("Formatting math, bold text, and headings…");
 
   const pages = rawMarkdown.split(/(?=--- Page \d+ ---)/);
   const CHUNK_SIZE = 6; // pages per chunk (increased from 3 for faster processing)
-  const processed: string[] = [];
+  const processed = [];
 
   for (let i = 0; i < pages.length; i += CHUNK_SIZE) {
     const chunk = pages.slice(i, i + CHUNK_SIZE).join("\n\n");
@@ -209,9 +208,9 @@ async function postProcess(
 //  Public API
 // ─────────────────────────────────────────────
 export async function convertHandwritingToText(
-  file: File,
-  onProgress?: (status: string) => void
-): Promise<string> {
+  file,
+  onProgress
+) {
   if (file.size > MAX_RECOMMENDED_SIZE)
     console.warn(`[TypedDoc] File is ${(file.size / 1024 / 1024).toFixed(1)} MB — may be slow.`);
 
@@ -241,11 +240,11 @@ export async function convertHandwritingToText(
   return formatted;
 }
 
-function toBase64(file: File): Promise<string> {
+function toBase64(file) {
   return new Promise((res, rej) => {
     const r = new FileReader();
     r.readAsDataURL(file);
-    r.onload  = () => res((r.result as string).split(",")[1]);
+    r.onload  = () => res(r.result.split(",")[1]);
     r.onerror = rej;
   });
 }

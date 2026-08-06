@@ -6,7 +6,6 @@ import {
   LayoutDashboard, Layers
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut } from './lib/firebase';
-import { Document, DocumentVersion, ConversionJob } from './types';
 import { subscribeToDocuments, createDocument, subscribeToVersions } from './services/documents';
 import { convertHandwritingToText } from './services/gemini';
 import { FileUpload } from './components/FileUpload';
@@ -18,22 +17,22 @@ import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
   const [user, loading] = useAuthState(auth);
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
-  const [versions, setVersions] = useState<DocumentVersion[]>([]);
-  const [jobs, setJobs] = useState<ConversionJob[]>([]);
+  const [documents, setDocuments] = useState([]);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [versions, setVersions] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [view, setView] = useState<'list' | 'upload' | 'edit' | 'settings'>('list');
-  const [globalError, setGlobalError] = useState<string | null>(null);
+  const [view, setView] = useState('list');
+  const [globalError, setGlobalError] = useState(null);
   const [mobileSidebar, setMobileSidebar] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState(null);
 
   const handleSignIn = async () => {
     setAuthError(null);
     try {
       await signInWithGoogle();
-    } catch (err: any) {
+    } catch (err) {
       const code = err?.code || '';
       if (code === 'auth/unauthorized-domain') {
         setAuthError(`Domain not authorized. Please add ${window.location.hostname} to Firebase console.`);
@@ -59,9 +58,9 @@ export default function App() {
     }
   }, [selectedDoc, user]);
 
-  const handleFilesAdded = async (files: File[]) => {
+  const handleFilesAdded = async (files) => {
     setGlobalError(null);
-    const newJobs: ConversionJob[] = files.map(file => ({
+    const newJobs = files.map(file => ({
       file, id: Math.random().toString(36).substr(2, 9), status: 'pending'
     }));
     setJobs(prev => [...prev, ...newJobs]);
@@ -79,9 +78,9 @@ export default function App() {
         });
         if (!text || text.trim().length === 0) throw new Error('No text extracted.');
         const title = job.file.name.replace(/\.[^/.]+$/, "");
-        await createDocument(user!.uid, title, text, job.file.name);
+        await createDocument(user.uid, title, text, job.file.name);
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'completed', content: text, error: undefined } : j));
-      } catch (err: any) {
+      } catch (err) {
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: err?.message || 'Failed' } : j));
       }
     }
@@ -171,7 +170,7 @@ export default function App() {
   }
 
   // Authenticated Layout
-  const NavButton = ({ id, icon: Icon, label, badge }: any) => (
+  const NavButton = ({ id, icon: Icon, label, badge }) => (
     <button
       onClick={() => { setView(id); if (id === 'list') setSelectedDoc(null); setMobileSidebar(false); }}
       className={cn(
@@ -251,7 +250,7 @@ export default function App() {
         <AnimatePresence mode="wait">
           {view === 'edit' && selectedDoc ? (
             <motion.div key="editor" initial={{opacity:0, scale:0.98}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:1.02}} className="h-screen">
-              <Editor document={selectedDoc} onBack={() => setView('list')} versions={versions} />
+              <Editor doc={selectedDoc} onBack={() => setView('list')} versions={versions} />
             </motion.div>
           ) : (
             <motion.div key="main" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="flex-1 overflow-y-auto">
