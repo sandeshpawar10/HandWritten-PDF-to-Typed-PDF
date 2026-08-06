@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, FileImage, ChevronRight, Trash2, Table2, Layers } from 'lucide-react';
+import { FileText, FileImage, ChevronRight, Trash2, Table2, BookOpen } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { deleteDocument } from '../services/documents';
@@ -25,12 +25,12 @@ export function DocumentList({ documents, onSelect }) {
   if (documents.length === 0) {
     return (
       <motion.div initial={{opacity:0}} animate={{opacity:1}} className="flex flex-col items-center justify-center py-32 text-center">
-        <div className="w-20 h-20 rounded-3xl glass flex items-center justify-center mb-8 border-accent/20">
-          <Layers className="w-8 h-8 text-text-dim" />
+        <div className="w-20 h-20 rounded-3xl bg-[#FFFBF5] border border-[#E8DFD0] flex items-center justify-center mb-8 border-[#8B5E3C]/20">
+          <BookOpen className="w-8 h-8 text-[#8C7B6B]" />
         </div>
-        <h3 className="text-xl font-display font-black text-white mb-2 uppercase tracking-tight">Archive Empty</h3>
-        <p className="text-sm text-text-dim max-w-xs font-bold">
-          No assets detected. Switch to Converter to digitize your handwriting.
+        <h3 className="text-xl font-serif font-black text-[#3D2E1C] mb-2">No documents yet</h3>
+        <p className="text-sm text-[#8C7B6B] max-w-xs font-bold">
+          Upload your handwritten notes to get started.
         </p>
       </motion.div>
     );
@@ -40,12 +40,12 @@ export function DocumentList({ documents, onSelect }) {
     <div className="space-y-8">
       {/* Sort controls */}
       <div className="flex items-center gap-3 justify-end">
-        <span className="text-[10px] font-bold text-text-dim uppercase tracking-[0.2em] mr-2">Sort By</span>
-        <div className="flex items-center p-1 rounded-2xl glass border-white/5">
+        <span className="text-[10px] font-bold text-[#8C7B6B] uppercase tracking-[0.2em] mr-2">Sort By</span>
+        <div className="flex items-center p-1 rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0]">
           {['date', 'name', 'words'].map(key => (
             <button key={key} onClick={() => setSortBy(key)}
               className={cn("px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all uppercase tracking-wider",
-                sortBy === key ? "bg-accent/10 text-accent" : "text-text-dim hover:text-white")}>
+                sortBy === key ? "bg-[#8B5E3C]/10 text-[#8B5E3C]" : "text-[#8C7B6B] hover:text-[#3D2E1C]")}>
               {key}
             </button>
           ))}
@@ -63,37 +63,34 @@ export function DocumentList({ documents, onSelect }) {
 
           return (
             <motion.div key={doc.id} initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} transition={{delay: i * 0.05, ease:[0.16,1,0.3,1]}}
-              onClick={() => onSelect(doc)} className="glass-card p-6 cursor-pointer group relative overflow-hidden">
+              onClick={() => onSelect(doc)} className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm hover:shadow-md hover:border-[#D4C9B8] transition-all duration-300 cursor-pointer p-6 group relative overflow-hidden">
               
-              {/* Highlight bar */}
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent/0 via-accent/40 to-accent/0 opacity-0 group-hover:opacity-100 transition-opacity" />
-
               <div className="flex items-start justify-between mb-6">
-                <div className="w-12 h-12 rounded-2xl bg-accent/5 border border-accent/10 flex items-center justify-center group-hover:border-accent/30 transition-colors">
-                  <TypeIcon className="w-5 h-5 text-accent" />
+                <div className="w-12 h-12 rounded-2xl bg-[#8B5E3C]/5 border border-[#8B5E3C]/10 flex items-center justify-center group-hover:border-[#8B5E3C]/30 transition-colors">
+                  <TypeIcon className="w-5 h-5 text-[#8B5E3C]" />
                 </div>
-                <button onClick={e => handleDelete(e, doc.id)} className="p-2 rounded-xl text-text-dim hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all">
+                <button onClick={e => handleDelete(e, doc.id)} className="p-2 rounded-xl text-[#8C7B6B] hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
 
-              <h4 className="font-display font-black text-lg text-white mb-2 truncate pr-2 group-hover:text-accent transition-colors uppercase tracking-tight">
+              <h4 className="font-serif font-black text-lg text-[#3D2E1C] mb-2 truncate pr-2 group-hover:text-[#8B5E3C] transition-colors">
                 {doc.title || 'Untitled Asset'}
               </h4>
 
-              <p className="text-[13px] text-text-dim line-clamp-2 leading-relaxed mb-6 font-medium">
+              <p className="text-[13px] text-[#8C7B6B] line-clamp-2 leading-relaxed mb-6 font-medium">
                 {doc.content.slice(0, 100).replace(/[#*_|`>-]/g, '')}...
               </p>
 
-              <div className="flex items-center justify-between pt-4 border-t border-white/5">
+              <div className="flex items-center justify-between pt-4 border-t border-[#E8DFD0]">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black text-accent opacity-60 uppercase">{ext}</span>
-                  <span className="text-[10px] font-bold text-text-dim uppercase tracking-tighter">{wordCount} WORDS</span>
-                  {hasTable && <Table2 className="w-3 h-3 text-accent2 opacity-60" />}
+                  <span className="text-[10px] font-black text-[#8B5E3C] opacity-60">{ext}</span>
+                  <span className="text-[10px] font-bold text-[#8C7B6B]">{wordCount} words</span>
+                  {hasTable && <Table2 className="w-3 h-3 text-[#C4853C] opacity-60" />}
                 </div>
-                <div className="flex items-center gap-2 text-[10px] font-bold text-text-dim uppercase">
+                <div className="flex items-center gap-2 text-[10px] font-bold text-[#8C7B6B]">
                   {date && date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                  <ChevronRight className="w-3 h-3 text-accent group-hover:translate-x-1 transition-transform" />
+                  <ChevronRight className="w-3 h-3 text-[#8B5E3C] group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
             </motion.div>

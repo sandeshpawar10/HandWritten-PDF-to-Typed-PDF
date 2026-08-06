@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-dotenv.config({ path: '../.env' }); // Load .env from root
+dotenv.config(); // Load .env from root
 
 const MISTRAL_OCR_URL  = "https://api.mistral.ai/v1/ocr";
 const MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions";

@@ -1,8 +1,9 @@
-import admin from 'firebase-admin';
+import { initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 
 // Initialize Firebase Admin without credentials 
 // (sufficient for verifyIdToken when using Google Auth)
-admin.initializeApp({
+initializeApp({
   projectId: "ai-studio-applet-webapp-a82b5"
 });
 
@@ -14,7 +15,7 @@ export const requireAuth = async (req, res, next) => {
 
   const token = authHeader.split('Bearer ')[1];
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await getAuth().verifyIdToken(token);
     req.user = decodedToken; // Make user info available to controllers
     next();
   } catch (error) {
