@@ -4,17 +4,7 @@ import {
   getRedirectResult, signOut
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfigTemplate from '../../firebase-applet-config.json';
-
-// Clone the config so we can modify it
-const firebaseConfig = { ...firebaseConfigTemplate };
-
-// If we are deployed on Vercel, use the current domain as the authDomain.
-// Vercel will rewrite /__/auth/* to the actual Firebase auth handler using the vercel.json we added.
-// This completely bypasses third-party cookie blocking in modern browsers (like Chrome/Safari).
-if (import.meta.env.PROD) {
-  firebaseConfig.authDomain = window.location.hostname;
-}
+import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
