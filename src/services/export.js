@@ -376,9 +376,6 @@ export async function exportToPdf(title, content) {
         font-family: "Times New Roman", Times, Georgia, serif !important;
         color: black !important;
       }
-      #active-print-container .katex, #active-print-container .katex * {
-        font-family: KaTeX_Main, KaTeX_Math, "Times New Roman", serif !important;
-      }
 
       /* Layout & Typography */
       #active-print-container { 
