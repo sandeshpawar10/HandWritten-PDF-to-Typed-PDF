@@ -118,7 +118,7 @@ Your job is to REFORMAT it — do NOT change the words, only improve the Markdow
   - Integrals, summations, limits → proper LaTeX
   - Chemical/physics formulas → $E = mc^2$
 - CRITICAL: DO NOT wrap Markdown headers (##, ###) or plain text paragraphs inside $$...$$. 
-- CRITICAL: DO NOT put text words inside the math block. Instead of `$$ a_n = ... \text{ For } n = 0 $$`, write `$$ a_n = ... $$ For $n = 0$`.
+- CRITICAL: DO NOT put text words inside the math block. Instead of \`$$ a_n = ... \\text{ For } n = 0 $$\`, write \`$$ a_n = ... $$ For $n = 0$\`.
 - If a line is ONLY an equation, use display math ($$).
 - If math is mid-sentence, use inline math ($).
 
