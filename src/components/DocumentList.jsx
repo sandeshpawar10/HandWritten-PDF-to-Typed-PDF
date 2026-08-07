@@ -69,7 +69,7 @@ export function DocumentList({ documents, onSelect }) {
                 <div className="w-12 h-12 rounded-2xl bg-[#8B5E3C]/5 border border-[#8B5E3C]/10 flex items-center justify-center group-hover:border-[#8B5E3C]/30 transition-colors">
                   <TypeIcon className="w-5 h-5 text-[#8B5E3C]" />
                 </div>
-                <button onClick={e => handleDelete(e, doc.id)} className="p-2 rounded-xl text-[#8C7B6B] hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all">
+                <button onClick={e => handleDelete(e, doc.id)} className="p-2 rounded-xl text-[#8C7B6B] hover:text-red-400 hover:bg-red-500/10 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
