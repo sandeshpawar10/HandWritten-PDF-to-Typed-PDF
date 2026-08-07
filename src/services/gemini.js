@@ -10,7 +10,7 @@ const API_BASE = "https://type-doc-backend.onrender.com";
 const PROXY_OCR_URL  = `${API_BASE}/api/ocr`;
 const PROXY_CHAT_URL = `${API_BASE}/api/chat`;
 const OCR_MODEL        = "mistral-ocr-latest";
-const CHAT_MODEL       = "mistral-medium-latest";   // used for post-processing
+const CHAT_MODEL       = "mistral-large-latest";   // upgraded to large for better reasoning
 
 const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024;
 
@@ -135,7 +135,13 @@ Your job is to REFORMAT it — do NOT change the words, only improve the Markdow
 - Bold labels before colons: **Note:**, **Example:**, **Theorem:**, **Proof:**
 - Do NOT bold entire sentences or paragraphs
 
-## 4. PRESERVE EVERYTHING ELSE:
+## 4. FIX OCR LAYOUT ERRORS (CRITICAL):
+- REARRANGE SCRAMBLED TEXT: OCR sometimes reads handwritten text out of order (e.g. putting a "Step 1" heading at the very bottom instead of above the table). Use context to rearrange misplaced text so it flows in logical, chronological order.
+- RECONSTRUCT TABLES: If OCR read a table's columns vertically (producing a detached list of values at the bottom), intelligently merge the columns back into a proper Markdown table.
+- DELETE HALLUCINATIONS: Completely remove any hallucinated PDF filenames, generic metadata, or repeated headers like "DAA_MODULE5_NOTES" or "localhost:3000" that appear at the very beginning of pages.
+- CLEANUP DIAGRAM GARBAGE: OCR often turns complex diagrams (like trees or knapsacks) into scrambled text equations. If you see scrambled, nonsensical text that was clearly a bad OCR read of a drawn tree or knapsack, try to format it cleanly, or if it's pure garbage, represent the relationships logically.
+
+## 5. PRESERVE EVERYTHING ELSE:
 - Keep all original words exactly — do not summarize or omit
 - Keep tables as Markdown tables
 - Keep lists as lists
