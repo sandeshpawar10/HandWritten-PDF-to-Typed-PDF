@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { 
   FileText, Plus, LogOut, Search, Files, Sparkles, User, ArrowRight,
-  AlertTriangle, X, Menu, Table2, Zap, Shield, Settings as SettingsIcon,
+  AlertTriangle, X, Menu, Table2, Zap, Shield,
   LayoutDashboard, Layers, BookOpen
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut } from './lib/firebase';
@@ -11,7 +11,7 @@ import { convertHandwritingToText } from './services/gemini';
 import { FileUpload } from './components/FileUpload';
 import { DocumentList } from './components/DocumentList';
 import { Editor } from './components/Editor';
-import { Settings } from './components/Settings';
+
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -199,7 +199,6 @@ export default function App() {
         <p className="px-4 text-[11px] font-bold text-[#8C7B6B] tracking-wide mb-4">Menu</p>
         <NavButton id="list" icon={LayoutDashboard} label="Documents" badge={documents.length || null} />
         <NavButton id="upload" icon={Plus} label="Upload" />
-        <NavButton id="settings" icon={SettingsIcon} label="Settings" />
       </nav>
 
       <div className="p-4 mt-auto">
@@ -256,10 +255,10 @@ export default function App() {
                     </button>
                     <div>
                       <h2 className="text-3xl font-serif font-black text-[#3D2E1C] tracking-tight">
-                        {view === 'list' ? 'Your Documents' : view === 'settings' ? 'Settings' : 'Upload & Convert'}
+                        {view === 'list' ? 'Your Documents' : 'Upload & Convert'}
                       </h2>
                       <p className="text-[13px] text-[#8C7B6B] font-medium mt-1">
-                        {view === 'list' ? `${documents.length} documents` : 'App settings'}
+                        {view === 'list' ? `${documents.length} documents` : ''}
                       </p>
                     </div>
                   </div>
@@ -285,10 +284,6 @@ export default function App() {
                   {view === 'list' ? (
                     <motion.div key="list" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}>
                       <DocumentList documents={filteredDocuments} onSelect={doc => { setSelectedDoc(doc); setView('edit'); }} />
-                    </motion.div>
-                  ) : view === 'settings' ? (
-                    <motion.div key="settings" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}>
-                      <Settings />
                     </motion.div>
                   ) : (
                     <motion.div key="upload" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}>
