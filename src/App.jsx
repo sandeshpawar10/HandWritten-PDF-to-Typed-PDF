@@ -131,10 +131,10 @@ export default function App() {
 
         <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center">
           <motion.div initial={{opacity:0, scale:0.9}} animate={{opacity:1, scale:1}} transition={{duration:1, ease:[0.16,1,0.3,1]}} className="max-w-5xl">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-[#E8DFD0] text-[#8B5E3C] text-[10px] font-bold tracking-wide mb-10 shadow-sm">
+            {/* <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-[#E8DFD0] text-[#8B5E3C] text-[10px] font-bold tracking-wide mb-10 shadow-sm">
               <Zap className="w-3 h-3 fill-[#8B5E3C]" />
               Powered by Mistral OCR Engine
-            </div>
+            </div> */}
 
             <h1 className="text-5xl sm:text-6xl md:text-8xl font-serif font-black leading-[1.1] tracking-tight mb-8 text-[#3D2E1C]">
               Transform Your <span className="text-[#8B5E3C]">Handwritten</span><br className="hidden md:block" /> Notes
