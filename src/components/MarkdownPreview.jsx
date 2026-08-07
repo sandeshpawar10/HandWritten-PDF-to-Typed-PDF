@@ -207,12 +207,7 @@ function parseMarkdown(md) {
     }
     if (inCodeBlock) { codeContent.push(line); i++; continue; }
 
-    // ── Display math block $$ (must be exactly $$ to start/end block mode) ──
-    if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length >= 4) {
-      closeList();
-      out.push(renderDisplayMath(trimmed.slice(2, -2).trim()));
-      i++; continue;
-    }
+    // ── Display math block $$ (multi-line) ──
     if (trimmed === "$$") {
       if (inMathBlock) {
         out.push(renderDisplayMath(mathContent.join("\n")));

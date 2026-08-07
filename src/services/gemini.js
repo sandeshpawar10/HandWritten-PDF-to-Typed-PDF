@@ -106,17 +106,19 @@ Your job is to REFORMAT it — do NOT change the words, only improve the Markdow
 
 ## 1. MATHEMATICS (MOST IMPORTANT)
 - Every mathematical expression MUST be wrapped in LaTeX delimiters:
-  - Inline math: $expression$ — e.g. $x^2 + y^2 = r^2$, $\\\\frac{a}{b}$, $\\\\alpha + \\\\beta$
-  - Block/display math: $$\\n expression \\n$$ — for equations on their own line
+  - Inline math: $expression$ — e.g. $x^2 + y^2 = r^2$, $\\frac{a}{b}$, $\\alpha + \\beta$
+  - Block/display math: $$ expression $$ — for equations on their own line
 - Convert ALL of these to proper LaTeX:
   - Plain text like "x^2" → $x^2$
   - Code blocks containing equations → $$ ... $$
-  - Fractions written as "a/b" in context → $\\\\frac{a}{b}$
-  - Greek letters written out → $\\\\alpha$, $\\\\beta$, $\\\\theta$, etc.
-  - Square roots → $\\\\sqrt{x}$
+  - Fractions written as "a/b" in context → $\\frac{a}{b}$
+  - Greek letters written out → $\\alpha$, $\\beta$, $\\theta$, etc.
+  - Square roots → $\\sqrt{x}$
   - Subscripts like "x_1" → $x_1$
   - Integrals, summations, limits → proper LaTeX
   - Chemical/physics formulas → $E = mc^2$
+- CRITICAL: DO NOT wrap Markdown headers (##, ###) or plain text paragraphs inside $$...$$. 
+- CRITICAL: DO NOT put text words inside the math block. Instead of `$$ a_n = ... \text{ For } n = 0 $$`, write `$$ a_n = ... $$ For $n = 0$`.
 - If a line is ONLY an equation, use display math ($$).
 - If math is mid-sentence, use inline math ($).
 
