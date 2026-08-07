@@ -6,16 +6,11 @@
 
 import { auth } from '../lib/firebase.js';
 
-const PROXY_OCR_URL  = "https://api.mistral.ai/v1/ocr";
-const PROXY_CHAT_URL = "https://api.mistral.ai/v1/chat/completions";
+const API_BASE = "https://type-doc-backend.onrender.com";
+const PROXY_OCR_URL  = `${API_BASE}/api/ocr`;
+const PROXY_CHAT_URL = `${API_BASE}/api/chat`;
 const OCR_MODEL        = "mistral-ocr-latest";
 const CHAT_MODEL       = "mistral-medium-latest";   // used for post-processing
-
-function getApiKey() {
-  const key = "ME4KtLGQm4R0dCXd0BIisvjUdnruLyT2"; // process.env.MISTRAL_API_KEY;
-  if (!key) throw new Error("Client configuration error: MISTRAL_API_KEY is missing");
-  return key;
-}
 
 const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024;
 
@@ -52,7 +47,7 @@ async function apiFetch(
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getApiKey()}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
     });
     const data = await res.json();
