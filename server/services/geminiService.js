@@ -32,7 +32,8 @@ export const runGeminiOCR = async (body) => {
 
   const prompt = `You are a Markdown formatting expert. I am giving you a handwritten document.
 
-Your job is to REFORMAT it and transcribe it perfectly:
+Your job is to REFORMAT it and transcribe it perfectly. 
+CRITICAL RULE: You MUST transcribe EVERY SINGLE WORD and EVERY SINGLE PAGE of the document. Do not summarize, skip, or omit anything.
 
 ## 1. MATHEMATICS (MOST IMPORTANT)
 - Every mathematical expression MUST be wrapped in LaTeX delimiters:
@@ -53,7 +54,7 @@ Your job is to REFORMAT it and transcribe it perfectly:
 
 ## OUTPUT:
 - Return ONLY the reformatted Markdown.
-- No preamble, no explanation.`;
+- No preamble, no explanation. Output the full transcribed text for all pages.`;
 
   const result = await model.generateContent([
     {
