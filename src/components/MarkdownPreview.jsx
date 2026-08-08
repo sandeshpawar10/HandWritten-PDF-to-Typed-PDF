@@ -19,8 +19,8 @@ function escapeHtml(str) {
 function renderInlineMath(tex) {
   try {
     if (!katex) return `<code class="md-code-inline">${escapeHtml(tex)}</code>`;
-    return katex.renderToString(tex, { 
-      throwOnError: false, 
+    return katex.renderToString(tex, {
+      throwOnError: true,
       displayMode: false, 
       output: "html" 
     });
@@ -35,8 +35,8 @@ function renderDisplayMath(tex) {
   if (!cleanTex) return "";
   try {
     if (!katex) return `<div class="md-math-block p-4 bg-slate-50 font-mono text-xs">$$ ${escapeHtml(cleanTex)} $$</div>`;
-    return `<div class="md-math-block">${katex.renderToString(cleanTex, { 
-      throwOnError: false, 
+    return `<div class="md-math-block">${katex.renderToString(cleanTex, {
+      throwOnError: true,
       displayMode: true, 
       output: "html" 
     })}</div>`;
@@ -58,9 +58,9 @@ function inlineFormat(raw) {
   
   const segments = [];
   
-  // Pattern: $$...$$ (display) | $...$ (inline)
-  // We use [\s\S]+? to allow multiline math if the input string contains newlines (from paragraph joining)
-  const mathRe = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g;
+  // Mistral can return either Markdown delimiters ($...$, $$...$$) or
+  // standard LaTeX delimiters (\(...\), \[...\]). Support both forms.
+  const mathRe = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$)/g;
   let lastIdx = 0;
   let m;
 
@@ -69,10 +69,11 @@ function inlineFormat(raw) {
       segments.push({ type: "text", content: raw.slice(lastIdx, m.index) });
     }
     const token = m[1];
-    if (token.startsWith("$$")) {
+    if (token.startsWith("$$") || token.startsWith("\\[")) {
       segments.push({ type: "math-display", content: token.slice(2, -2).trim() });
     } else {
-      segments.push({ type: "math-inline", content: token.slice(1, -1).trim() });
+      const delimiterLength = token.startsWith("\\(") ? 2 : 1;
+      segments.push({ type: "math-inline", content: token.slice(delimiterLength, -delimiterLength).trim() });
     }
     lastIdx = m.index + token.length;
   }
@@ -189,6 +190,10 @@ function parseMarkdown(md) {
     }
   };
 
+  const isAutoHeading = (text) =>
+    /^\d+(?:\.\d+)+\s+.+$/.test(text) ||
+    /^(?:[A-Z][A-Za-z0-9&/()'\-]*)(?:\s+[A-Z][A-Za-z0-9&/()'\-]*){0,7}$/.test(text);
+
   while (i < lines.length) {
     const line    = lines[i];
     const trimmed = line.trim();
@@ -207,6 +212,31 @@ function parseMarkdown(md) {
     }
     if (inCodeBlock) { codeContent.push(line); i++; continue; }
 
+    // Indented OCR lines are algorithms or source code. Preserve their line
+    // breaks instead of merging them into a paragraph.
+    if (/^(?: {2,}|\t)/.test(line)) {
+      closeList();
+      const codeLines = [];
+      while (i < lines.length && lines[i].trim() !== "" && /^(?: {2,}|\t)/.test(lines[i])) {
+        codeLines.push(lines[i].replace(/^(?: {2,}|\t)/, ""));
+        i++;
+      }
+      out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    // Preserve un-fenced C-like code emitted by OCR, including its line breaks.
+    if (/^(?:#include\b|main\s*\(|(?:void|int|float|double|char|bool)\b)/.test(trimmed)) {
+      closeList();
+      const codeLines = [];
+      while (i < lines.length && lines[i].trim() !== "") {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      continue;
+    }
+
     // ── Display math block $$ (multi-line) ──
     if (trimmed === "$$") {
       if (inMathBlock) {
@@ -219,17 +249,54 @@ function parseMarkdown(md) {
     }
     if (inMathBlock) { mathContent.push(line); i++; continue; }
 
+    // Standard LaTex display delimiters can be returned instead of $$...$$.
+    if (trimmed === "\\[") {
+      closeList();
+      const mathLines = [];
+      i++;
+      while (i < lines.length && lines[i].trim() !== "\\]") {
+        mathLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) i++;
+      out.push(renderDisplayMath(mathLines.join("\n")));
+      continue;
+    }
+
     // ── Raw LaTeX \begin{...} ... \end{...} ──
     if (trimmed.startsWith("\\begin{")) {
       closeList();
       const envMatch = trimmed.match(/^\\begin\{([^}]+)\}/);
       const envName = envMatch ? envMatch[1] : "";
-      const mathLines = [line]; i++;
-      while (i < lines.length && !lines[i].trim().startsWith(`\\end{${envName}}`)) {
+      const endMarker = `\\end{${envName}}`;
+      const mathLines = [line];
+
+      // A common OCR form has both \begin and \end on the same line. The
+      // previous parser ignored that closing marker and consumed every later
+      // page as one invalid equation.
+      if (envName && trimmed.includes(endMarker)) {
+        out.push(renderDisplayMath(line));
+        i++;
+        continue;
+      }
+
+      i++;
+      while (
+        i < lines.length &&
+        !lines[i].trim().includes(endMarker) &&
+        !lines[i].trim().match(/^---\s*Page\s+\d+\s*---$/i)
+      ) {
         mathLines.push(lines[i]); i++;
       }
-      if (i < lines.length) { mathLines.push(lines[i]); i++; }
-      out.push(renderDisplayMath(mathLines.join("\n")));
+      if (i < lines.length && lines[i].trim().includes(endMarker)) {
+        mathLines.push(lines[i]);
+        i++;
+        out.push(renderDisplayMath(mathLines.join("\n")));
+      } else {
+        // Keep malformed OCR math visible without allowing it to swallow the
+        // rest of the document or render as a large red KaTeX error.
+        out.push(`<pre class="md-code-block"><code>${escapeHtml(mathLines.join("\n"))}</code></pre>`);
+      }
       continue;
     }
 
@@ -263,6 +330,37 @@ function parseMarkdown(md) {
       closeList();
       const lvl = hm[1].length;
       out.push(`<h${lvl} class="md-h${lvl}">${inlineFormat(hm[2])}</h${lvl}>`);
+      i++; continue;
+    }
+
+    // OCR commonly returns numbered headings as plain text, for example
+    // "11.3 P, NP, and NP-complete Problems". Render those as section titles.
+    const numberedHeading = trimmed.match(/^(\d+(?:\.\d+)+)\s+(.+)$/);
+    if (numberedHeading) {
+      closeList();
+      out.push(`<h2 class="md-h2"><span class="md-section-number">${escapeHtml(numberedHeading[1])}</span> ${inlineFormat(numberedHeading[2])}</h2>`);
+      i++; continue;
+    }
+
+    // Short Title Case lines are topic headings in handwritten notes.
+    if (isAutoHeading(trimmed)) {
+      closeList();
+      out.push(`<h3 class="md-h3">${inlineFormat(trimmed)}</h3>`);
+      i++; continue;
+    }
+
+    if (/^Types of Problems\s*:?$/i.test(trimmed)) {
+      closeList();
+      out.push(`<h3 class="md-h3">${inlineFormat(trimmed.replace(/\s*:?$/, ""))}</h3>`);
+      i++; continue;
+    }
+
+    // Keep labels such as "Algorithm:", "Program:", and "Input:" distinct
+    // from the explanatory text that follows.
+    const labelLine = trimmed.match(/^(Algorithm|Program|Pseudocode|Input|Output|Example|Note|Step\s+\d+)\s*:\s*(.+)$/i);
+    if (labelLine) {
+      closeList();
+      out.push(`<p class="md-paragraph"><strong>${escapeHtml(labelLine[1])}:</strong> ${inlineFormat(labelLine[2])}</p>`);
       i++; continue;
     }
 
@@ -303,7 +401,10 @@ function parseMarkdown(md) {
       i < lines.length &&
       lines[i].trim() !== "" &&
       lines[i].trim() !== "$$" &&
-      !lines[i].trim().match(/^#{1,6}\s/) &&
+       !lines[i].trim().match(/^#{1,6}\s/) &&
+       !isAutoHeading(lines[i].trim()) &&
+       !lines[i].match(/^(?: {2,}|\t)/) &&
+       !/^(?:#include\b|main\s*\(|(?:void|int|float|double|char|bool)\b)/.test(lines[i].trim()) &&
       !lines[i].trim().startsWith("```") &&
       !lines[i].trim().startsWith("\\begin{") &&
       !lines[i].trim().startsWith(">") &&

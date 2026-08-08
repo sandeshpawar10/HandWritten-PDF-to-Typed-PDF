@@ -98,19 +98,19 @@ export function Editor({ doc, onBack, versions }) {
       <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
         <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><Download className="w-4 h-4 text-[#8B5E3C]" /> Export</h4>
         <div className="space-y-3">
-          <button onClick={() => handleExport('docx')} disabled={!!isExporting} className={cn("bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center w-full py-3 h-auto text-sm", isExporting && "opacity-60 cursor-wait")}>
+          {/* <button onClick={() => handleExport('docx')} disabled={!!isExporting} className={cn("bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center w-full py-3 h-auto text-sm", isExporting && "opacity-60 cursor-wait")}>
             {isExporting === 'docx' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileType className="w-4 h-4 mr-2" />}
             {isExporting === 'docx' ? 'Generating…' : 'Download DOCX'}
-          </button>
+          </button> */}
           <div className="grid grid-cols-2 gap-3">
             <button onClick={() => handleExport('pdf')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
               {isExporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
               {isExporting === 'pdf' ? '…' : 'PDF'}
             </button>
-            <button onClick={() => handleExport('txt')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
+            {/* <button onClick={() => handleExport('txt')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
               {isExporting === 'txt' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
               {isExporting === 'txt' ? '…' : 'TXT'}
-            </button>
+            </button> */}
           </div>
         </div>
       </div>

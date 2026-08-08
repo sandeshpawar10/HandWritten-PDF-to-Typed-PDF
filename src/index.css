@@ -130,8 +130,21 @@ body {
 
 .md-preview h1 { @apply text-4xl font-extrabold mb-6 tracking-tight; color: var(--color-text-main); }
 .md-preview h2 { @apply text-2xl font-bold mt-10 mb-4; color: var(--color-text-main); }
+.md-preview h3 { @apply text-xl font-bold mt-8 mb-3; color: var(--color-text-main); }
 .md-preview p { @apply mb-5 text-[1.05rem]; color: var(--color-text-dim); }
 .md-preview strong { @apply font-bold; color: var(--color-text-main); }
+
+.md-code-block {
+  @apply my-5 p-4 rounded-xl border overflow-x-auto text-sm leading-relaxed;
+  background: #f8f6f2;
+  border-color: var(--color-border);
+  font-family: "Courier New", Courier, monospace;
+  white-space: pre;
+}
+
+.md-section-number {
+  color: var(--color-accent);
+}
 
 .md-math-block {
   @apply my-8 p-6 rounded-2xl border transition-all;

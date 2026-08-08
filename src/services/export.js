@@ -302,11 +302,12 @@ export async function exportToPdf(title, content) {
   // Find the dedicated print container
   const printEl = document.getElementById('pdf-export-content');
   if (!printEl) {
-    window.print();
+    throw new Error('The document preview is not ready for PDF export.');
     return;
   }
 
-  // Clone the node and append it to the body (outside of React's overflow-hidden containers)
+  // Use the browser's paged PDF engine. Unlike canvas-based export, it can
+  // reliably handle large documents with many full-page diagrams.
   const clone = printEl.cloneNode(true);
   clone.id = 'active-print-container';
   clone.className = 'md-preview'; // Reset classes to avoid Tailwind layout conflicts
@@ -318,13 +319,15 @@ export async function exportToPdf(title, content) {
   clone.style.background = 'white';
   clone.style.zIndex = '999999';
   
-  // Re-insert the title into the clone for printing
-  clone.innerHTML = `
-    <div class="print-header">
-      <h1>${title}</h1>
-    </div>
-    ${printEl.innerHTML}
-  `;
+  // Avoid adding a second title when OCR already produced an H1 title.
+  if (!clone.querySelector('h1')) {
+    const header = document.createElement('div');
+    header.className = 'print-header';
+    const heading = document.createElement('h1');
+    heading.textContent = title;
+    header.appendChild(heading);
+    clone.prepend(header);
+  }
 
   document.body.appendChild(clone);
 
@@ -433,6 +436,8 @@ export async function exportToPdf(title, content) {
       #active-print-container .md-hr { border: none; border-top: 1px solid #ccc; margin: 1.5em 0; }
       
       #active-print-container .md-image { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+      #active-print-container .md-page-separator { break-before: page; page-break-before: always; height: 0; overflow: hidden; margin: 0; }
+      #active-print-container .print-header + .md-page-separator { break-before: auto; page-break-before: auto; }
       
       /* Hide top header/footer URLs that browsers insert */
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
