@@ -212,18 +212,7 @@ function parseMarkdown(md) {
     }
     if (inCodeBlock) { codeContent.push(line); i++; continue; }
 
-    // Indented OCR lines are algorithms or source code. Preserve their line
-    // breaks instead of merging them into a paragraph.
-    if (/^(?: {2,}|\t)/.test(line)) {
-      closeList();
-      const codeLines = [];
-      while (i < lines.length && lines[i].trim() !== "" && /^(?: {2,}|\t)/.test(lines[i])) {
-        codeLines.push(lines[i].replace(/^(?: {2,}|\t)/, ""));
-        i++;
-      }
-      out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
-      continue;
-    }
+
 
     // Preserve un-fenced C-like code emitted by OCR, including its line breaks.
     if (/^(?:#include\b|main\s*\(|(?:void|int|float|double|char|bool)\b)/.test(trimmed)) {
@@ -403,7 +392,6 @@ function parseMarkdown(md) {
       lines[i].trim() !== "$$" &&
        !lines[i].trim().match(/^#{1,6}\s/) &&
        !isAutoHeading(lines[i].trim()) &&
-       !lines[i].match(/^(?: {2,}|\t)/) &&
        !/^(?:#include\b|main\s*\(|(?:void|int|float|double|char|bool)\b)/.test(lines[i].trim()) &&
       !lines[i].trim().startsWith("```") &&
       !lines[i].trim().startsWith("\\begin{") &&
