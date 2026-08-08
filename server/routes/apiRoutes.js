@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimiter } from '../middleware/rateLimit.js';
-import { handleOcr } from '../controllers/apiController.js';
+import { handleOcr, handleChat } from '../controllers/apiController.js';
 
 const router = express.Router();
 
@@ -10,5 +10,6 @@ router.use(requireAuth);
 router.use(rateLimiter);
 
 router.post('/ocr', handleOcr);
+router.post('/chat', handleChat);
 
 export default router;

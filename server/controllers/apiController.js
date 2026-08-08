@@ -1,11 +1,21 @@
-import { runGeminiOCR } from '../services/geminiService.js';
+import { runMistralOCR, runMistralChat } from '../services/mistralService.js';
 
 export const handleOcr = async (req, res) => {
   try {
-    const data = await runGeminiOCR(req.body);
+    const data = await runMistralOCR(req.body);
     res.json(data);
   } catch (error) {
-    console.error('Gemini OCR Proxy Error:', error);
-    res.status(error.status || 500).json(error.data || { error: 'Internal Server Error', message: error.message });
+    console.error('OCR Proxy Error:', error);
+    res.status(error.status || 500).json(error.data || { error: 'Internal Server Error' });
+  }
+};
+
+export const handleChat = async (req, res) => {
+  try {
+    const data = await runMistralChat(req.body);
+    res.json(data);
+  } catch (error) {
+    console.error('Chat Proxy Error:', error);
+    res.status(error.status || 500).json(error.data || { error: 'Internal Server Error' });
   }
 };
