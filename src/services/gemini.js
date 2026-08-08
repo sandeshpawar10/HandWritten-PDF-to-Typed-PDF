@@ -100,57 +100,51 @@ async function runOCR(
 // ─────────────────────────────────────────────
 //  Step 2 — AI post-processing for math + bold + headings
 // ─────────────────────────────────────────────
-const POST_PROCESS_PROMPT = `You are a Markdown formatting expert. I will give you raw OCR output from a handwritten document.
+const POST_PROCESS_PROMPT = `You are an elite Computer Science Professor and a Markdown formatting expert. I will give you raw OCR output from handwritten Data Structures and Algorithms notes.
 
-Your job is to REFORMAT it — do NOT change the words, only improve the Markdown structure:
+Your job is to REFORMAT it and CORRECT OCR ERRORS silently without changing the intended meaning:
 
-## 1. MATHEMATICS (MOST IMPORTANT)
-- Every mathematical expression MUST be wrapped in LaTeX delimiters:
-  - Inline math: $expression$ — e.g. $x^2 + y^2 = r^2$, $\\frac{a}{b}$, $\\alpha + \\beta$
-  - Block/display math: $$ expression $$ — for equations on their own line
-- Convert ALL of these to proper LaTeX:
-  - Plain text like "x^2" → $x^2$
-  - Code blocks containing equations → $$ ... $$
-  - Fractions written as "a/b" in context → $\\frac{a}{b}$
-  - Greek letters written out → $\\alpha$, $\\beta$, $\\theta$, etc.
-  - Square roots → $\\sqrt{x}$
-  - Subscripts like "x_1" → $x_1$
-  - Integrals, summations, limits → proper LaTeX
-  - Chemical/physics formulas → $E = mc^2$
-- CRITICAL: DO NOT wrap Markdown headers (##, ###) or plain text paragraphs inside $$...$$. 
-- CRITICAL: DO NOT put text words inside the math block. Instead of \`$$ a_n = ... \\text{ For } n = 0 $$\`, write \`$$ a_n = ... $$ For $n = 0$\`.
-- If a line is ONLY an equation, use display math ($$).
-- If math is mid-sentence, use inline math ($).
+## 1. INTELLIGENT OCR SPELL-CHECK (CRITICAL)
+- Handwriting OCR often makes mistakes. You MUST use your CS knowledge to quietly autocorrect obvious typos.
+- Examples of required autocorrects:
+  - "Trautable" → "Tractable"
+  - "Intraitable" → "Intractable"
+  - "salution" → "solution"
 
-## 2. HEADINGS — detect and promote:
-- Main document title → # Title
-- Chapter/section names (usually underlined or ALL CAPS or written larger) → ## Section
-- Subsection names → ### Subsection
-- If a short line is followed by body text and reads like a topic name → make it ## or ###
+## 2. CODE SYNTAX AUTOCORRECTION
+- If you see a code block or pseudocode, format it cleanly with \`\`\`c or \`\`\` text.
+- OCR often breaks brackets and keywords. Quietly fix them to make the code valid:
+  - Change "scarf" to "scanf"
+  - Ensure functions start with "{" and end with "}" (OCR often misreads "{" as "}").
+  - Restore proper indentation for loops and conditionals.
 
-## 3. BOLD TEXT — apply intelligently:
-- **Bold** every: topic name, key term, definition word, important concept
-- In a definition like "Ohm's Law: V = IR", bold the term: **Ohm's Law**
-- Bold the first mention of any technical term
-- Bold labels before colons: **Note:**, **Example:**, **Theorem:**, **Proof:**
-- Do NOT bold entire sentences or paragraphs
+## 3. MATHEMATICAL RECONSTRUCTION
+- Every mathematical expression MUST be wrapped in LaTeX delimiters ($ or $$).
+- If an equation comes in scrambled (e.g., "⌈log n!⌉ 2 Cworst(n) ≥ ⌈log n!⌉ 2 n!"), DO NOT blindly copy the garbage. Use your context of Stirling's approximation, time complexities, or bounds to output the mathematically correct equation: $$ C_{worst}(n) \ge \\lceil \\log_2 n! \\rceil $$
+- Convert written fractions like a/b to $\\frac{a}{b}$, and fix scrambled logarithms and inequalities.
 
-## 4. FIX OCR LAYOUT ERRORS (CRITICAL):
-- REARRANGE SCRAMBLED TEXT: OCR sometimes reads handwritten text out of order (e.g. putting a "Step 1" heading at the very bottom instead of above the table). Use context to rearrange misplaced text so it flows in logical, chronological order.
-- RECONSTRUCT TABLES: If OCR read a table's columns vertically (producing a detached list of values at the bottom), intelligently merge the columns back into a proper Markdown table.
-- DELETE HALLUCINATIONS: Completely remove any hallucinated PDF filenames, generic metadata, or repeated headers like "DAA_MODULE5_NOTES" or "localhost:3000" that appear at the very beginning of pages.
-- CLEANUP DIAGRAM GARBAGE: OCR often turns complex diagrams (like trees or knapsacks) into scrambled text equations. If you see scrambled, nonsensical text that was clearly a bad OCR read of a drawn tree or knapsack, try to format it cleanly, or if it's pure garbage, represent the relationships logically.
+## 4. DIAGRAM TEXT RECOVERY
+- If OCR spits out random floating letters (like "A Reduce B Polynomial"), format it as a logical text sequence or a bulleted list rather than leaving it as a messy broken sentence. 
+- Try to logically represent trees or graphs if the text is clearly describing nodes and edges.
 
-## 5. PRESERVE EVERYTHING ELSE:
-- Keep all original words exactly — do not summarize or omit
-- Keep tables as Markdown tables
-- Keep lists as lists
-- Keep page separators (--- Page N ---)
-- Keep blockquotes (> ...)
+## 5. FIX OCR LAYOUT & REMOVE EMPTY SPACES (CRITICAL)
+- **Make the text continuous.** Completely REMOVE all extra blank lines, empty spaces, and huge vertical gaps between paragraphs.
+- REARRANGE SCRAMBLED TEXT: Use context to rearrange misplaced text so it flows in logical, chronological order.
+- DELETE HALLUCINATIONS: Completely remove any hallucinated PDF filenames, metadata, or repeated headers like "DAA_MODULE5_NOTES" or "localhost:3000".
+
+## 6. HEADINGS & BOLD TEXT
+- **Bold** every key term, definition, and label (e.g., **Theorem:**, **Note:**).
+- Promote chapter names to #, ##, or ###.
+
+## 7. PRESERVE INTENT WITHOUT OMITTING
+- DO NOT OMIT ANY TEXT. You MUST include every single paragraph, sentence, and word exactly as written (except for the typos you fix).
+- CRITICAL: Keep all code snippets, pseudocode, and algorithms. Do not summarize or skip them.
+- Keep tables as Markdown tables.
+- Keep page separators (--- Page N ---).
 
 ## OUTPUT:
-- Return ONLY the reformatted Markdown
-- No preamble, no explanation, no code fences around the whole output`;
+- Return ONLY the reformatted Markdown.
+- No preamble, no explanation, no code fences around the whole output.`;
 
 async function postProcess(
   rawMarkdown,
@@ -159,7 +153,7 @@ async function postProcess(
   onProgress?.("Formatting math, bold text, and headings…");
 
   const pages = rawMarkdown.split(/(?=--- Page \d+ ---)/);
-  const CHUNK_SIZE = 6; // pages per chunk (increased from 3 for faster processing)
+  const CHUNK_SIZE = 2; // reduced to 2 pages per chunk to prevent LLM from dropping content and missing code blocks
   const processed = [];
 
   for (let i = 0; i < pages.length; i += CHUNK_SIZE) {
