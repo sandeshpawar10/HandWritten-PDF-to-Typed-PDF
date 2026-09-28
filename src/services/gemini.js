@@ -6,7 +6,9 @@
 
 import { auth } from '../lib/firebase.js';
 
-const API_BASE = "https://type-doc-backend.onrender.com";
+// Use empty string in production so it automatically uses whatever Render URL it's hosted on.
+// Use localhost:3000 in development so your local Vite server can find the local Express server.
+const API_BASE = import.meta.env.PROD ? "" : "http://localhost:3000";
 const PROXY_OCR_URL  = `${API_BASE}/api/ocr`;
 const PROXY_CHAT_URL = `${API_BASE}/api/chat`;
 const OCR_MODEL        = "mistral-ocr-latest";
