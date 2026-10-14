@@ -11,6 +11,7 @@ import { convertHandwritingToText } from './services/mistral';
 import { FileUpload } from './components/FileUpload';
 import { DocumentList } from './components/DocumentList';
 import { Editor } from './components/Editor';
+import { OfflineBanner } from './components/OfflineBanner';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 import { cn } from './lib/utils';
