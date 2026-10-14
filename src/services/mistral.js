@@ -8,9 +8,17 @@ import { auth } from '../lib/firebase.js';
 
 // Issue #18: Extract magic numbers to named constants
 // API Configuration
-const API_BASE = import.meta.env.PROD ? "" : "http://localhost:3000";
+// TODO: Replace with your deployed backend URL from Render
+const API_BASE = import.meta.env.PROD
+  ? (import.meta.env.VITE_BACKEND_URL || "https://YOUR-BACKEND-URL.onrender.com")
+  : "http://localhost:3001";
 const PROXY_OCR_URL  = `${API_BASE}/api/ocr`;
 const PROXY_CHAT_URL = `${API_BASE}/api/chat`;
+
+// Check if backend is configured in production
+if (import.meta.env.PROD && !import.meta.env.VITE_BACKEND_URL && API_BASE.includes('YOUR-BACKEND-URL')) {
+  console.error('❌ Backend not configured! Please deploy the backend server and update API_BASE in mistral.js');
+}
 const OCR_MODEL = "mistral-ocr-latest";
 const CHAT_MODEL = "mistral-large-latest";
 
