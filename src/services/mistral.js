@@ -22,9 +22,9 @@ const WARN_FILE_SIZE = 10 * 1024 * 1024; // 10MB - show warning
 const MAX_FILE_SIZE_MB = 20; // For error messages
 
 // Retry configuration (Issue #18)
-const MAX_RETRIES = 4;
-const BASE_DELAY_MS = 5_000;
-const MAX_DELAY_MS = 60_000;
+const MAX_RETRIES = 2; // Reduced from 4 to avoid hitting rate limits
+const BASE_DELAY_MS = 10_000; // Increased from 5s to 10s
+const MAX_DELAY_MS = 120_000; // Increased from 60s to 120s
 
 // Processing configuration (Issue #18)
 const PAGES_PER_CHUNK = 2; // Pages processed per API call
