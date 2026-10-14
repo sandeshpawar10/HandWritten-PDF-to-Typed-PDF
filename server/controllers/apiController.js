@@ -1,8 +1,10 @@
-import { runMistralOCR, runMistralChat } from '../services/mistralService.js';
+import { runGoogleVisionOCR } from '../services/googleVisionService.js';
+import { runMistralChat } from '../services/mistralService.js';
 
 export const handleOcr = async (req, res) => {
   try {
-    const data = await runMistralOCR(req.body);
+    // Use Google Vision API for OCR (better accuracy and free tier)
+    const data = await runGoogleVisionOCR(req.body);
     res.json(data);
   } catch (error) {
     console.error('OCR Proxy Error:', error);
@@ -12,6 +14,7 @@ export const handleOcr = async (req, res) => {
 
 export const handleChat = async (req, res) => {
   try {
+    // Still use Mistral for chat/formatting (can be replaced with OpenAI later)
     const data = await runMistralChat(req.body);
     res.json(data);
   } catch (error) {

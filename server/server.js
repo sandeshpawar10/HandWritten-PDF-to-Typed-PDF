@@ -70,14 +70,15 @@ app.get('/health', (req, res) => {
 app.use('/api', apiRoutes);
 
 // Issue #9: Validate environment on startup
-const requiredEnvVars = ['MISTRAL_API_KEY'];
+const requiredEnvVars = ['GOOGLE_CLOUD_VISION_API_KEY'];
 const missingVars = requiredEnvVars.filter(varName =>
-  !process.env[varName] || process.env[varName] === 'your_mistral_api_key_here'
+  !process.env[varName] || process.env[varName] === 'your_google_api_key_here'
 );
 
 if (missingVars.length > 0) {
   console.error('✗ Missing required environment variables:', missingVars.join(', '));
-  console.error('  Copy .env.example to .env and configure your API keys.');
+  console.error('  Set GOOGLE_CLOUD_VISION_API_KEY in Render environment variables.');
+  console.error('  See GOOGLE_VISION_SETUP.md for instructions.');
   process.exit(1);
 }
 
