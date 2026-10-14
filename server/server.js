@@ -12,7 +12,11 @@ const port = process.env.PORT || 3001;
 const getAllowedOrigins = () => {
   if (process.env.NODE_ENV === 'production') {
     // Production: Use environment variable or infer from Render
-    const origins = [];
+    const origins = [
+      'https://typed-doc.web.app',  // Firebase Hosting domain
+      'https://ai-studio-applet-webapp-a82b5.web.app',  // Firebase project domain
+      'https://ai-studio-applet-webapp-a82b5.firebaseapp.com'  // Firebase app domain
+    ];
 
     // Add custom frontend URL from env
     if (process.env.FRONTEND_URL) {
@@ -22,12 +26,6 @@ const getAllowedOrigins = () => {
     // Add Render URLs if available
     if (process.env.RENDER_EXTERNAL_URL) {
       origins.push(process.env.RENDER_EXTERNAL_URL);
-    }
-
-    // Fallback: Allow requests from same origin (backend serving frontend)
-    if (origins.length === 0) {
-      console.warn('⚠️  No FRONTEND_URL set. Allowing same-origin only.');
-      return true; // Allow same origin
     }
 
     console.log('✓ CORS allowed origins:', origins);
