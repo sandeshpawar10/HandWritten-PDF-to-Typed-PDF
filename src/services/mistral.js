@@ -69,7 +69,11 @@ async function apiFetch(
       onProgress?.(`Rate limited – waiting ${(d/1000).toFixed(0)}s… (retry ${attempt+1}/${MAX_RETRIES})`);
       await sleep(d); continue;
     }
-    if (res.status === 401) throw new Error("INVALID_API_KEY: Mistral key invalid. Check Settings.");
+    // Better error messages for common issues
+    if (res.status === 429) {
+      throw new Error(`RATE_LIMIT: Mistral API rate limit exceeded. ${msg}. Please wait a few minutes and try again.`);
+    }
+    if (res.status === 401) throw new Error("INVALID_API_KEY: Mistral key invalid. Check backend configuration.");
     if (res.status === 402 || msg.includes("billing") || msg.includes("quota"))
       throw new Error(`QUOTA: ${msg}`);
     lastErr = new Error(msg);
