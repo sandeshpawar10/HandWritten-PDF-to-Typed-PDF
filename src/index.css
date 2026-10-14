@@ -1,37 +1,42 @@
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500&family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
 @import "katex/dist/katex.min.css";
-@import "tailwindcss";
 
-@theme {
-  --font-sans: "Source Sans 3", system-ui, sans-serif;
-  --font-display: "Merriweather", serif;
-  --font-mono: "Fira Code", ui-monospace, monospace;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  --color-bg: #F5F0E8;
-  --color-surface: #FFFBF5;
-  --color-surface-hover: #FFF8EE;
-  --color-border: #E8DFD0;
-  --color-border-bright: #D4C9B8;
+@layer base {
+  :root {
+    --font-sans: "Source Sans 3", system-ui, sans-serif;
+    --font-display: "Merriweather", serif;
+    --font-mono: "Fira Code", ui-monospace, monospace;
 
-  --color-accent: #8B5E3C;
-  --color-accent2: #C4853C;
-  --color-accent3: #5B8C5A;
+    --color-bg: #F5F0E8;
+    --color-surface: #FFFBF5;
+    --color-surface-hover: #FFF8EE;
+    --color-border: #E8DFD0;
+    --color-border-bright: #D4C9B8;
 
-  --color-text-main: #3D2E1C;
-  --color-text-dim: #8C7B6B;
-  --color-text-mid: #6B5D4F;
+    --color-accent: #8B5E3C;
+    --color-accent2: #C4853C;
+    --color-accent3: #5B8C5A;
 
-  /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #8B5E3C 0%, #C4853C 100%);
-  --gradient-hero: linear-gradient(135deg, #F5F0E8 0%, #E8DFD0 50%, #F5F0E8 100%);
-  --gradient-card: linear-gradient(145deg, #FFFBF5 0%, #FFF8EE 100%);
+    --color-text-main: #3D2E1C;
+    --color-text-dim: #8C7B6B;
+    --color-text-mid: #6B5D4F;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(139, 94, 60, 0.05);
-  --shadow-md: 0 4px 12px rgba(139, 94, 60, 0.08), 0 2px 4px rgba(139, 94, 60, 0.04);
-  --shadow-lg: 0 12px 24px rgba(139, 94, 60, 0.12), 0 4px 8px rgba(139, 94, 60, 0.06);
-  --shadow-xl: 0 20px 40px rgba(139, 94, 60, 0.16), 0 8px 16px rgba(139, 94, 60, 0.08);
-  --shadow-glow: 0 0 20px rgba(139, 94, 60, 0.15);
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, #8B5E3C 0%, #C4853C 100%);
+    --gradient-hero: linear-gradient(135deg, #F5F0E8 0%, #E8DFD0 50%, #F5F0E8 100%);
+    --gradient-card: linear-gradient(145deg, #FFFBF5 0%, #FFF8EE 100%);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(139, 94, 60, 0.05);
+    --shadow-md: 0 4px 12px rgba(139, 94, 60, 0.08), 0 2px 4px rgba(139, 94, 60, 0.04);
+    --shadow-lg: 0 12px 24px rgba(139, 94, 60, 0.12), 0 4px 8px rgba(139, 94, 60, 0.06);
+    --shadow-xl: 0 20px 40px rgba(139, 94, 60, 0.16), 0 8px 16px rgba(139, 94, 60, 0.08);
+    --shadow-glow: 0 0 20px rgba(139, 94, 60, 0.15);
+  }
 }
 
 * { box-sizing: border-box; }
