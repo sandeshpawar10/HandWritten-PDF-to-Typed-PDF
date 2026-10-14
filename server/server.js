@@ -8,15 +8,82 @@ import apiRoutes from './routes/apiRoutes.js';
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Middlewares
-app.use(cors());
-// Mistral OCR needs large payload limits for base64 images (up to 50MB)
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// CORS Configuration - supports dynamic origins via environment variables
+const getAllowedOrigins = () => {
+  if (process.env.NODE_ENV === 'production') {
+    // Production: Use environment variable or infer from Render
+    const origins = [];
+
+    // Add custom frontend URL from env
+    if (process.env.FRONTEND_URL) {
+      origins.push(process.env.FRONTEND_URL);
+    }
+
+    // Add Render URLs if available
+    if (process.env.RENDER_EXTERNAL_URL) {
+      origins.push(process.env.RENDER_EXTERNAL_URL);
+    }
+
+    // Fallback: Allow requests from same origin (backend serving frontend)
+    if (origins.length === 0) {
+      console.warn('⚠️  No FRONTEND_URL set. Allowing same-origin only.');
+      return true; // Allow same origin
+    }
+
+    console.log('✓ CORS allowed origins:', origins);
+    return origins;
+  }
+
+  // Development: Allow common local dev servers
+  return [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173', // Vite default
+    'http://127.0.0.1:5173'
+  ];
+};
+
+const corsOptions = {
+  origin: getAllowedOrigins(),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
+
+// Payload size limits - balance between functionality and memory safety
+// Base64-encoded PDFs can be large, but we need to prevent OOM crashes
+// on low-memory environments (Render free tier = 512MB RAM)
+// Limit: 25MB allows most documents while preventing memory exhaustion
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+// Issue #25: Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
 
 // Routes
 app.use('/api', apiRoutes);
 
+// Issue #9: Validate environment on startup
+const requiredEnvVars = ['MISTRAL_API_KEY'];
+const missingVars = requiredEnvVars.filter(varName =>
+  !process.env[varName] || process.env[varName] === 'your_mistral_api_key_here'
+);
+
+if (missingVars.length > 0) {
+  console.error('✗ Missing required environment variables:', missingVars.join(', '));
+  console.error('  Copy .env.example to .env and configure your API keys.');
+  process.exit(1);
+}
+
 app.listen(port, () => {
-  console.log(`Backend proxy server running on http://localhost:${port}`);
+  console.log(`✓ Backend server running on http://localhost:${port}`);
+  console.log(`✓ Health check available at http://localhost:${port}/health`);
 });

@@ -1,11 +1,29 @@
-import { initializeApp } from 'firebase-admin/app';
+import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 
-// Initialize Firebase Admin without credentials 
-// (sufficient for verifyIdToken when using Google Auth)
-initializeApp({
-  projectId: "ai-studio-applet-webapp-a82b5"
-});
+// Initialize Firebase Admin with service account if available
+// Falls back to public key verification if service account not provided
+let app;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    app = initializeApp({
+      credential: cert(serviceAccount)
+    });
+    console.log('✓ Firebase Admin initialized with service account');
+  } catch (error) {
+    console.error('✗ Failed to parse FIREBASE_SERVICE_ACCOUNT:', error.message);
+    console.log('  Falling back to public key verification');
+    app = initializeApp({
+      projectId: "ai-studio-applet-webapp-a82b5"
+    });
+  }
+} else {
+  console.warn('⚠️  FIREBASE_SERVICE_ACCOUNT not set. Using public key verification (may have intermittent failures).');
+  app = initializeApp({
+    projectId: "ai-studio-applet-webapp-a82b5"
+  });
+}
 
 export const requireAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
