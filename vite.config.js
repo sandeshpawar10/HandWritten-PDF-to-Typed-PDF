@@ -4,13 +4,10 @@ import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
   return {
     plugins: [react(), tailwindcss()],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.MISTRAL_API_KEY': JSON.stringify(env.MISTRAL_API_KEY),
-    },
+    // SECURITY: Never expose API keys to the frontend bundle
+    // All API calls go through the backend proxy at /api
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

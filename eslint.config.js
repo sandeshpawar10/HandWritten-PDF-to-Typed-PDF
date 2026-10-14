@@ -1,7 +1,6 @@
 import js from "@eslint/js";
 import reactPlugin from "eslint-plugin-react";
 import reactHooksPlugin from "eslint-plugin-react-hooks";
-
 import globals from "globals";
 
 export default [
@@ -17,6 +16,8 @@ export default [
         ...globals.node
       },
       parserOptions: {
+        ecmaVersion: 2024,
+        sourceType: 'module',
         ecmaFeatures: {
           jsx: true
         }
@@ -24,15 +25,8 @@ export default [
     },
     rules: {
       "no-unused-vars": "warn",
-      "react/prop-types": "off",
+      "react/prop-types": "warn", // Issue #16: Re-enable to catch type errors
       "react/react-in-jsx-scope": "off"
-    },
-    languageOptions: {
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true
-        }
-      }
     }
   }
 ];

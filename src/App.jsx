@@ -7,16 +7,24 @@ import {
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut } from './lib/firebase';
 import { subscribeToDocuments, createDocument, subscribeToVersions } from './services/documents';
-import { convertHandwritingToText } from './services/gemini';
+import { convertHandwritingToText } from './services/mistral';
 import { FileUpload } from './components/FileUpload';
 import { DocumentList } from './components/DocumentList';
 import { Editor } from './components/Editor';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
+// Issue #18: Extract magic numbers to named constants
+const SEARCH_DEBOUNCE_MS = 300;
+const JOB_DELAY_MS = 2000; // Delay between processing multiple files
+const SEARCH_MIN_LENGTH = 3; // Minimum search query length for content search
+
 export default function App() {
   const [user, loading] = useAuthState(auth);
+  // Issue #30: Detect offline state
+  const isOnline = useOnlineStatus();
   const [documents, setDocuments] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [versions, setVersions] = useState([]);
@@ -69,7 +77,7 @@ export default function App() {
 
     for (let idx = 0; idx < newJobs.length; idx++) {
       const job = newJobs[idx];
-      if (idx > 0) await new Promise(r => setTimeout(r, 2000));
+      if (idx > 0) await new Promise(r => setTimeout(r, JOB_DELAY_MS));
 
       setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'converting' } : j));
       try {
@@ -86,15 +94,15 @@ export default function App() {
     }
   };
 
-  // Debounce search input — waits 300ms after last keystroke
+  // Debounce search input
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
   const filteredDocuments = documents.filter(doc =>
     doc.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-    (debouncedSearch.length > 2 && doc.content.toLowerCase().includes(debouncedSearch.toLowerCase()))
+    (debouncedSearch.length > SEARCH_MIN_LENGTH && doc.content.toLowerCase().includes(debouncedSearch.toLowerCase()))
   );
 
   if (loading) {
@@ -115,50 +123,133 @@ export default function App() {
   if (!user) {
     return (
       <div className="min-h-screen bg-[#F5F0E8] flex flex-col relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#F5F0E8] to-[#E8DFD0] pointer-events-none" />
-        
-        <header className="relative z-10 px-8 h-24 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0] flex items-center justify-center shadow-sm">
+        {/* Animated gradient background */}
+        <div className="nebula-bg" />
+
+        {/* Floating orbs for depth */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <motion.div
+            animate={{ y: [0, -30, 0], x: [0, 20, 0] }}
+            transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute top-20 left-10 w-72 h-72 bg-[#8B5E3C]/5 rounded-full blur-3xl"
+          />
+          <motion.div
+            animate={{ y: [0, 40, 0], x: [0, -30, 0] }}
+            transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute bottom-20 right-10 w-96 h-96 bg-[#C4853C]/5 rounded-full blur-3xl"
+          />
+        </div>
+
+        <header className="relative z-10 px-8 h-24 flex items-center justify-between backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-3"
+          >
+            <div className="w-11 h-11 rounded-2xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-105 magnetic">
               <BookOpen className="w-5 h-5 text-[#8B5E3C]" />
             </div>
-            <span className="font-serif font-black text-xl text-[#3D2E1C]">TypedDoc</span>
-          </div>
-          <button onClick={handleSignIn} className="px-4 py-2 rounded-xl bg-white border border-[#E8DFD0] text-[#3D2E1C] font-bold text-sm hover:bg-[#F5F0E8] transition-colors shadow-sm flex items-center gap-2">
+            <span className="font-serif font-black text-2xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">TypedDoc</span>
+          </motion.div>
+          <motion.button
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            onClick={handleSignIn}
+            className="px-5 py-2.5 rounded-xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] text-[#3D2E1C] font-bold text-sm hover:bg-white hover:shadow-lg transition-all flex items-center gap-2 magnetic hover:scale-105"
+          >
             Sign in <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          </motion.button>
         </header>
 
         <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center">
-          <motion.div initial={{opacity:0, scale:0.9}} animate={{opacity:1, scale:1}} transition={{duration:1, ease:[0.16,1,0.3,1]}} className="max-w-5xl">
-            {/* <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-[#E8DFD0] text-[#8B5E3C] text-[10px] font-bold tracking-wide mb-10 shadow-sm">
-              <Zap className="w-3 h-3 fill-[#8B5E3C]" />
-              Powered by Mistral OCR Engine
-            </div> */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            className="max-w-5xl"
+          >
+            {/* Hero heading with staggered animation */}
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.8 }}
+              className="text-5xl sm:text-6xl md:text-8xl font-serif font-black leading-[1.1] tracking-tight mb-8 text-[#3D2E1C]"
+            >
+              Transform Your{' '}
+              <span className="relative inline-block">
+                <span className="prism-text">Handwritten</span>
+                <motion.div
+                  animate={{ scale: [1, 1.02, 1], opacity: [0.3, 0.5, 0.3] }}
+                  transition={{ duration: 3, repeat: Infinity }}
+                  className="absolute -inset-2 bg-gradient-to-r from-[#8B5E3C]/20 to-[#C4853C]/20 blur-2xl -z-10 rounded-3xl"
+                />
+              </span>
+              <br className="hidden md:block" /> Notes
+            </motion.h1>
 
-            <h1 className="text-5xl sm:text-6xl md:text-8xl font-serif font-black leading-[1.1] tracking-tight mb-8 text-[#3D2E1C]">
-              Transform Your <span className="text-[#8B5E3C]">Handwritten</span><br className="hidden md:block" /> Notes
-            </h1>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.8 }}
+              className="text-lg sm:text-xl text-[#6B5D4F] max-w-2xl mx-auto mb-14 leading-relaxed font-medium"
+            >
+              Upload your handwritten PDFs and get beautifully typed documents in seconds with AI-powered OCR.
+            </motion.p>
 
-            <p className="text-lg sm:text-xl text-[#6B5D4F] max-w-2xl mx-auto mb-14 leading-relaxed font-medium">
-              Upload your handwritten PDFs and get beautifully typed documents in seconds.
-            </p>
+            <motion.button
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6, duration: 0.8 }}
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleSignIn}
+              className="btn-primary px-8 py-4 rounded-2xl text-lg group relative overflow-hidden shimmer"
+            >
+              <span className="relative z-10 flex items-center">
+                <User className="w-5 h-5 mr-3" />
+                Get Started with Google
+                <ArrowRight className="w-5 h-5 ml-3 group-hover:translate-x-1 transition-transform" />
+              </span>
+            </motion.button>
 
-            <button onClick={handleSignIn} className="px-8 py-4 rounded-2xl bg-[#8B5E3C] text-white font-bold text-lg hover:bg-[#6B462C] transition-all shadow-md group inline-flex items-center">
-              <User className="w-5 h-5 mr-3" />
-              Get Started with Google
-              <ArrowRight className="w-5 h-5 ml-3 group-hover:translate-x-1 transition-transform" />
-            </button>
-
-            <div className="flex flex-wrap items-center justify-center gap-4 mt-20">
-              {['Math Equations', 'Complex Tables', 'Batch Processing', 'Cloud Sync'].map((f) => (
-                <span key={f} className="px-4 py-2 rounded-2xl text-[12px] font-medium text-[#8B5E3C] bg-white border border-[#E8DFD0] shadow-sm hover:border-[#8B5E3C]/30 transition-all cursor-default">
-                  {f}
-                </span>
+            {/* Feature badges with staggered animation */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8, duration: 0.8 }}
+              className="flex flex-wrap items-center justify-center gap-3 mt-20"
+            >
+              {[
+                { icon: Sparkles, label: 'Math Equations' },
+                { icon: Table2, label: 'Complex Tables' },
+                { icon: Zap, label: 'Batch Processing' },
+                { icon: Shield, label: 'Cloud Sync' }
+              ].map((f, i) => (
+                <motion.span
+                  key={f.label}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.9 + i * 0.1 }}
+                  whileHover={{ scale: 1.05, y: -2 }}
+                  className="px-4 py-2.5 rounded-2xl text-[12px] font-bold text-[#8B5E3C] bg-white/80 backdrop-blur-sm border border-[#E8DFD0]/50 shadow-md hover:shadow-lg hover:border-[#8B5E3C]/30 transition-all cursor-default flex items-center gap-2"
+                >
+                  <f.icon className="w-3.5 h-3.5" />
+                  {f.label}
+                </motion.span>
               ))}
-            </div>
+            </motion.div>
           </motion.div>
         </main>
+
+        {authError && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-4 rounded-2xl bg-red-50/90 backdrop-blur-sm border border-red-200 text-red-700 text-sm font-medium shadow-lg max-w-md"
+          >
+            {authError}
+          </motion.div>
+        )}
       </div>
     );
   }
@@ -184,16 +275,20 @@ export default function App() {
   );
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-[#FFFBF5]">
-      <div className="h-24 px-8 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-2xl bg-[#8B5E3C]/10 border border-[#8B5E3C]/20 flex items-center justify-center">
-          <BookOpen className="w-4.5 h-4.5 text-[#8B5E3C]" />
+    <div className="flex flex-col h-full">
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="h-24 px-8 flex items-center gap-3"
+      >
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/10 to-[#C4853C]/10 border border-[#8B5E3C]/20 flex items-center justify-center shadow-sm hover:shadow-md transition-all hover:scale-105 magnetic">
+          <BookOpen className="w-5 h-5 text-[#8B5E3C]" />
         </div>
-        <span className="font-serif font-black text-lg text-[#3D2E1C] tracking-tight">TypedDoc</span>
-        <button onClick={() => setMobileSidebar(false)} className="ml-auto p-2 rounded-xl bg-white border border-[#E8DFD0] shadow-sm md:hidden text-[#3D2E1C]">
+        <span className="font-serif font-black text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">TypedDoc</span>
+        <button onClick={() => setMobileSidebar(false)} className="ml-auto p-2 rounded-xl bg-white/80 border border-[#E8DFD0] shadow-sm md:hidden text-[#3D2E1C] hover:bg-white hover:scale-105 transition-all magnetic">
           <X className="w-4 h-4" />
         </button>
-      </div>
+      </motion.div>
 
       <nav className="flex-1 px-4 space-y-2 mt-4">
         <p className="px-4 text-[11px] font-bold text-[#8C7B6B] tracking-wide mb-4">Menu</p>
@@ -202,29 +297,42 @@ export default function App() {
       </nav>
 
       <div className="p-4 mt-auto">
-        <div className="bg-white border border-[#E8DFD0] shadow-sm rounded-2xl p-4 mb-4">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white/80 backdrop-blur-sm border border-[#E8DFD0] shadow-lg rounded-2xl p-4 mb-4 hover:shadow-xl transition-all"
+        >
           <div className="flex items-center gap-3 mb-4">
-            <img src={user.photoURL || ''} className="w-10 h-10 rounded-2xl border border-[#E8DFD0]" alt="me" />
-            <div className="min-w-0">
-              <p className="text-[14px] font-medium text-[#3D2E1C] truncate">{user.displayName}</p>
+            <div className="relative group">
+              <img src={user.photoURL || ''} className="w-11 h-11 rounded-2xl border-2 border-[#E8DFD0] group-hover:border-[#8B5E3C]/30 transition-all" alt="me" />
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/0 to-[#8B5E3C]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[14px] font-bold text-[#3D2E1C] truncate">{user.displayName}</p>
               <p className="text-[12px] text-[#8C7B6B] truncate">{user.email}</p>
             </div>
           </div>
-          <button onClick={logOut} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium text-[#8C7B6B] hover:text-[#3D2E1C] hover:bg-[#F5F0E8] border border-transparent transition-all">
-            <LogOut className="w-4 h-4" /> Sign out
+          <button onClick={logOut} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-bold text-[#8C7B6B] hover:text-[#3D2E1C] hover:bg-[#F5F0E8]/50 border border-transparent hover:border-[#E8DFD0] transition-all magnetic" aria-label="Sign out of your account">
+            <LogOut className="w-4 h-4" aria-hidden="true" /> Sign out
           </button>
-        </div>
+        </motion.div>
       </div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-[#F5F0E8] flex relative text-[#3D2E1C] font-sans selection:bg-[#8B5E3C]/20">
-      <div className="absolute inset-0 bg-gradient-to-br from-[#F5F0E8] to-[#E8DFD0] pointer-events-none" />
+      <div className="nebula-bg" />
+
+      {/* Issue #30: Offline banner */}
+      <OfflineBanner />
 
       {/* Desktop Sidebar */}
-      <aside className="w-72 border-r border-[#E8DFD0] flex-col shrink-0 hidden md:flex z-20">
-        {sidebarContent}
+      <aside className="w-72 border-r border-[#E8DFD0]/50 backdrop-blur-xl bg-white/40 flex-col shrink-0 hidden md:flex z-20 relative" role="navigation" aria-label="Main navigation">
+        <div className="absolute inset-0 bg-gradient-to-b from-white/60 to-white/40 pointer-events-none" />
+        <div className="relative z-10">
+          {sidebarContent}
+        </div>
       </aside>
 
       {/* Mobile Sidebar */}

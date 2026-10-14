@@ -1,27 +1,33 @@
 /**
- * mistral-ocr.ts  (kept as gemini.ts so no import paths need changing)
- * Uses Mistral OCR 3 + Mistral Chat to produce properly formatted Markdown
- * with real LaTeX math and smart bold/heading detection.
+ * Mistral OCR Service (Frontend)
+ * Uses Mistral OCR + Mistral Chat to convert handwritten documents to formatted Markdown
+ * with LaTeX math and intelligent formatting.
  */
 
 import { auth } from '../lib/firebase.js';
 
-// Use empty string in production so it automatically uses whatever Render URL it's hosted on.
-// Use localhost:3000 in development so your local Vite server can find the local Express server.
+// Issue #18: Extract magic numbers to named constants
+// API Configuration
 const API_BASE = import.meta.env.PROD ? "" : "http://localhost:3000";
 const PROXY_OCR_URL  = `${API_BASE}/api/ocr`;
 const PROXY_CHAT_URL = `${API_BASE}/api/chat`;
-const OCR_MODEL        = "mistral-ocr-latest";
-const CHAT_MODEL       = "mistral-large-latest";   // upgraded to large for better reasoning
+const OCR_MODEL = "mistral-ocr-latest";
+const CHAT_MODEL = "mistral-large-latest";
 
-const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024;
+// File size limits (Issue #13 + OOM Prevention)
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB - prevents backend OOM on low-memory servers
+const WARN_FILE_SIZE = 10 * 1024 * 1024; // 10MB - show warning
+const MAX_FILE_SIZE_MB = 20; // For error messages
 
-// ─────────────────────────────────────────────
-//  Retry helpers
-// ─────────────────────────────────────────────
-const MAX_RETRIES   = 4;
+// Retry configuration (Issue #18)
+const MAX_RETRIES = 4;
 const BASE_DELAY_MS = 5_000;
-const MAX_DELAY_MS  = 60_000;
+const MAX_DELAY_MS = 60_000;
+
+// Processing configuration (Issue #18)
+const PAGES_PER_CHUNK = 2; // Pages processed per API call
+const CHUNK_DELAY_MS = 1500; // Delay between chunk processing
+const AVERAGE_READING_SPEED_WPM = 200; // For read time calculation
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -155,46 +161,79 @@ async function postProcess(
   onProgress?.("Formatting math, bold text, and headings…");
 
   const pages = rawMarkdown.split(/(?=--- Page \d+ ---)/);
-  const CHUNK_SIZE = 2; // reduced to 2 pages per chunk to prevent LLM from dropping content and missing code blocks
   const processed = [];
+  const failures = []; // Track failed chunks for user notification
 
-  for (let i = 0; i < pages.length; i += CHUNK_SIZE) {
-    const chunk = pages.slice(i, i + CHUNK_SIZE).join("\n\n");
-    const pageNums = `${i + 1}–${Math.min(i + CHUNK_SIZE, pages.length)}`;
+  for (let i = 0; i < pages.length; i += PAGES_PER_CHUNK) {
+    const chunk = pages.slice(i, i + PAGES_PER_CHUNK).join("\n\n");
+    const pageNums = `${i + 1}–${Math.min(i + PAGES_PER_CHUNK, pages.length)}`;
     onProgress?.(`Formatting pages ${pageNums} of ${pages.length}…`);
-    
-    const data = await apiFetch(
-      PROXY_CHAT_URL,
-      {
-        model: CHAT_MODEL,
-        max_tokens: 8192,
-        messages: [
-          { role: "system", content: POST_PROCESS_PROMPT },
-          { role: "user", content: chunk },
-        ],
-      },
-      `post-process pages ${pageNums}`,
-      onProgress
-    );
 
-    let text = data.choices?.[0]?.message?.content ?? chunk;
-    
-    // Robustly extract the markdown payload from the AI's response.
-    // AI often includes conversational filler like "Here is the formatted text: \n ```markdown \n ... \n ```"
-    const match = text.match(/```(?:markdown)?\s*\n([\s\S]*?)\n```/i);
-    if (match) {
-      text = match[1].trim();
-    } else {
-      // Fallback: manually strip if it's perfectly wrapped but missed by regex
-      text = text.trim();
-      if (text.startsWith("```markdown") && text.endsWith("```")) text = text.slice(11, -3).trim();
-      else if (text.startsWith("```") && text.endsWith("```")) text = text.slice(3, -3).trim();
+    try {
+      const data = await apiFetch(
+        PROXY_CHAT_URL,
+        {
+          model: CHAT_MODEL,
+          max_tokens: 8192,
+          messages: [
+            { role: "system", content: POST_PROCESS_PROMPT },
+            { role: "user", content: chunk },
+          ],
+        },
+        `post-process pages ${pageNums}`,
+        onProgress
+      );
+
+      let text = data.choices?.[0]?.message?.content ?? chunk;
+
+      // Robustly extract the markdown payload from the AI's response.
+      // AI often includes conversational filler like "Here is the formatted text: \n ```markdown \n ... \n ```"
+      const match = text.match(/```(?:markdown)?\s*\n([\s\S]*?)\n```/i);
+      if (match) {
+        text = match[1].trim();
+      } else {
+        // Fallback: manually strip if it's perfectly wrapped but missed by regex
+        text = text.trim();
+        if (text.startsWith("```markdown") && text.endsWith("```")) text = text.slice(11, -3).trim();
+        else if (text.startsWith("```") && text.endsWith("```")) text = text.slice(3, -3).trim();
+      }
+
+      processed.push(text);
+
+    } catch (error) {
+      // PARTIAL RECOVERY: Don't fail the entire document
+      // Fall back to raw OCR text for this chunk
+      console.warn(`Post-processing failed for pages ${pageNums}:`, error.message);
+
+      failures.push(pageNums);
+
+      // Add warning banner to the failed chunk
+      const warningBanner =
+        `\n\n---\n\n` +
+        `⚠️ **Processing Note**: Pages ${pageNums} could not be fully formatted due to a network error. ` +
+        `Raw OCR text is shown below. You can manually edit this section.\n\n` +
+        `---\n\n`;
+
+      // Use raw OCR text as fallback
+      processed.push(warningBanner + chunk);
+
+      // Notify user but continue processing
+      onProgress?.(
+        `⚠️ Pages ${pageNums} partially processed. Continuing with remaining pages…`
+      );
     }
-    
-    processed.push(text);
 
-    // Small pause between chunks
-    if (i + CHUNK_SIZE < pages.length) await sleep(1500);
+    // Small pause between chunks to avoid rate limiting
+    if (i + PAGES_PER_CHUNK < pages.length) await sleep(CHUNK_DELAY_MS);
+  }
+
+  // Notify user if any chunks failed
+  if (failures.length > 0) {
+    const failedPagesList = failures.join(', ');
+    onProgress?.(
+      `✓ Document processed with warnings. Pages ${failedPagesList} contain raw OCR text. ` +
+      `All other pages were successfully formatted.`
+    );
   }
 
   return processed.join("\n\n").trim();
@@ -207,8 +246,22 @@ export async function convertHandwritingToText(
   file,
   onProgress
 ) {
-  if (file.size > MAX_RECOMMENDED_SIZE)
-    console.warn(`[TypedDoc] File is ${(file.size / 1024 / 1024).toFixed(1)} MB — may be slow.`);
+  // Issue #13 + OOM Prevention: Strict file size validation
+  // Backend has 25MB payload limit to prevent OOM on low-memory servers
+  // Frontend enforces 20MB limit to stay safely under backend limit
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error(
+      `File size ${(file.size / 1024 / 1024).toFixed(1)} MB exceeds maximum limit of ${MAX_FILE_SIZE_MB} MB. ` +
+      `Please split large documents into smaller files (10-15 pages each) for better processing.`
+    );
+  }
+
+  if (file.size > WARN_FILE_SIZE) {
+    onProgress?.(
+      `Large file detected (${(file.size / 1024 / 1024).toFixed(1)} MB). ` +
+      `Processing may take several minutes. For faster results, consider splitting into smaller files.`
+    );
+  }
 
   const isPdf = file.type === "application/pdf";
 

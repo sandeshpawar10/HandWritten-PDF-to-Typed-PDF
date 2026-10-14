@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { updateDocument, saveVersion } from '../services/documents';
 import { exportToDocx, exportToPdf, exportToTxt } from '../services/export';
 import { MarkdownPreview } from './MarkdownPreview';
+import { ConfirmDialog } from './ConfirmDialog';
 import { cn } from '../lib/utils';
 
 export function Editor({ doc, onBack, versions }) {
@@ -18,6 +19,8 @@ export function Editor({ doc, onBack, versions }) {
   const [isExporting, setIsExporting] = useState(null); // tracks which format is exporting
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  // Issue #10: Replace confirm() with proper modal
+  const [restoreVersion, setRestoreVersion] = useState(null);
 
   // Auto-save timer ref
   const autoSaveTimer = useRef(null);
@@ -95,27 +98,65 @@ export function Editor({ doc, onBack, versions }) {
   };
   const sidebarContent = (
     <div className="space-y-6">
-      <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
-        <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><Download className="w-4 h-4 text-[#8B5E3C]" /> Export</h4>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-card p-6"
+      >
+        <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6">
+          <Download className="w-4 h-4 text-[#8B5E3C]" /> Export
+        </h4>
         <div className="space-y-3">
-          {/* <button onClick={() => handleExport('docx')} disabled={!!isExporting} className={cn("bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center w-full py-3 h-auto text-sm", isExporting && "opacity-60 cursor-wait")}>
+          <motion.button
+            whileHover={{ scale: 1.02, y: -2 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleExport('docx')}
+            disabled={!!isExporting}
+            className={cn(
+              "btn-primary w-full py-3.5 h-auto text-sm font-bold rounded-xl shadow-md hover:shadow-lg relative overflow-hidden",
+              isExporting && "opacity-60 cursor-wait"
+            )}
+          >
             {isExporting === 'docx' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileType className="w-4 h-4 mr-2" />}
             {isExporting === 'docx' ? 'Generating…' : 'Download DOCX'}
-          </button> */}
+          </motion.button>
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => handleExport('pdf')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => handleExport('pdf')}
+              disabled={!!isExporting}
+              className={cn(
+                "bg-white/80 backdrop-blur-sm border border-[#E8DFD0] text-[#3D2E1C] hover:bg-white hover:border-[#8B5E3C]/30 rounded-xl font-bold transition-all flex items-center justify-center py-3 gap-2 shadow-sm hover:shadow-md magnetic",
+                isExporting && "opacity-60 cursor-wait"
+              )}
+            >
               {isExporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
               {isExporting === 'pdf' ? '…' : 'PDF'}
-            </button>
-            {/* <button onClick={() => handleExport('txt')} disabled={!!isExporting} className={cn("bg-[#FFFBF5] border border-[#E8DFD0] text-[#3D2E1C] hover:bg-[#F5F0E8] rounded-xl font-medium transition-colors flex items-center justify-center py-3 gap-2", isExporting && "opacity-60 cursor-wait")}>
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => handleExport('txt')}
+              disabled={!!isExporting}
+              className={cn(
+                "bg-white/80 backdrop-blur-sm border border-[#E8DFD0] text-[#3D2E1C] hover:bg-white hover:border-[#8B5E3C]/30 rounded-xl font-bold transition-all flex items-center justify-center py-3 gap-2 shadow-sm hover:shadow-md magnetic",
+                isExporting && "opacity-60 cursor-wait"
+              )}
+            >
               {isExporting === 'txt' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
               {isExporting === 'txt' ? '…' : 'TXT'}
-            </button> */}
+            </motion.button>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="glass-card p-6"
+      >
         <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><BarChart3 className="w-4 h-4 text-[#8B5E3C]" /> Document Stats</h4>
         <div className="space-y-4">
           {[{label:'Words',value:stats.words.toLocaleString()},{label:'Chars',value:stats.chars.toLocaleString()},{label:'Read',value:`${stats.readTime}m`},{label:'Pages',value:stats.pages}].map(({label,value}) => (
@@ -125,25 +166,52 @@ export function Editor({ doc, onBack, versions }) {
             </div>
           ))}
         </div>
-      </div>
+      </motion.div>
 
-      <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-2xl shadow-sm p-6">
-        <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><RotateCcw className="w-4 h-4 text-[#8B5E3C]" /> History</h4>
-        {versions.length === 0 ? <p className="text-sm text-[#8C7B6B] italic">No snapshots yet.</p> : (
-          <div className="space-y-2">{versions.slice(0, 5).map(v => (
-            <button key={v.id} onClick={() => { if(confirm('Restore this snapshot?')) { setContent(v.content); setIsDirty(true); setShowMobileMenu(false); }}}
-              className="w-full group p-3 rounded-2xl bg-[#FFFBF5] border border-[#E8DFD0] hover:border-[#8B5E3C]/30 transition-all text-left">
-              <p className="text-sm font-bold text-[#3D2E1C] truncate mb-1 group-hover:text-[#8B5E3C] transition-colors">{v.note || 'Auto Snapshot'}</p>
-              <p className="text-xs font-medium text-[#8C7B6B]">{v.createdAt?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-            </button>
-          ))}</div>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="glass-card p-6"
+      >
+        <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6">
+          <RotateCcw className="w-4 h-4 text-[#8B5E3C]" /> History
+        </h4>
+        {versions.length === 0 ? (
+          <p className="text-sm text-[#8C7B6B] italic">No snapshots yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {versions.slice(0, 5).map((v, i) => (
+              <motion.button
+                key={v.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.05 }}
+                whileHover={{ scale: 1.02, x: 4 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setRestoreVersion(v)}
+                className="w-full group p-3.5 rounded-2xl bg-white/60 backdrop-blur-sm border border-[#E8DFD0] hover:border-[#8B5E3C]/40 hover:bg-white/80 transition-all text-left shadow-sm hover:shadow-md"
+              >
+                <p className="text-sm font-bold text-[#3D2E1C] truncate mb-1 group-hover:text-[#8B5E3C] transition-colors">
+                  {v.note || 'Auto Snapshot'}
+                </p>
+                <p className="text-xs font-medium text-[#8C7B6B]">
+                  {v.createdAt?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+                </p>
+              </motion.button>
+            ))}
+          </div>
         )}
-      </div>
+      </motion.div>
 
       {saveError && (
-        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-600 text-sm font-bold">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-600 text-sm font-bold shadow-md"
+        >
           {saveError}
-        </div>
+        </motion.div>
       )}
     </div>
   );
@@ -264,6 +332,23 @@ export function Editor({ doc, onBack, versions }) {
           </>
         )}
       </AnimatePresence>
+
+      {/* Issue #10: Replace confirm() with professional modal */}
+      <ConfirmDialog
+        isOpen={restoreVersion !== null}
+        onClose={() => setRestoreVersion(null)}
+        onConfirm={() => {
+          setContent(restoreVersion.content);
+          setIsDirty(true);
+          setShowMobileMenu(false);
+          setRestoreVersion(null);
+        }}
+        title="Restore Snapshot?"
+        message={`This will replace your current content with "${restoreVersion?.note || 'Auto Snapshot'}". Any unsaved changes will be lost.`}
+        confirmText="Restore"
+        cancelText="Cancel"
+        variant="default"
+      />
     </div>
   );
 }

@@ -17,16 +17,19 @@ import { db, auth } from '../lib/firebase';
 const COLLECTION_NAME = 'documents';
 
 /**
- * According to system instructions, when a Firestore operation fails due to "Missing or insufficient permissions,"
- * we must throw a JSON string of FirestoreErrorInfo.
+ * Handle Firestore errors with user-friendly messages
+ * Logs detailed debug information to console for developers
  */
 function handleFirestoreError(error, operationType, path = null) {
   if (error instanceof FirestoreError && error.code === 'permission-denied') {
     const user = auth.currentUser;
-    const errorInfo = {
+
+    // Detailed error info for debugging (logged, not shown to user)
+    const debugInfo = {
       error: error.message,
       operationType,
       path,
+      timestamp: new Date().toISOString(),
       authInfo: {
         userId: user?.uid || 'anonymous',
         email: user?.email || 'unknown',
@@ -39,8 +42,47 @@ function handleFirestoreError(error, operationType, path = null) {
         })) || [],
       }
     };
-    throw new Error(JSON.stringify(errorInfo));
+
+    // Log detailed error for developers
+    console.error('Firestore Permission Error:', debugInfo);
+
+    // User-friendly error messages based on operation type
+    let userMessage = 'You do not have permission to access this document.';
+
+    if (operationType === 'create') {
+      userMessage = 'Unable to create document. Please try signing out and back in.';
+    } else if (operationType === 'update') {
+      userMessage = 'Unable to save changes. You may not have permission to edit this document.';
+    } else if (operationType === 'delete') {
+      userMessage = 'Unable to delete document. You may not have permission to delete this document.';
+    } else if (operationType === 'list') {
+      userMessage = 'Unable to load your documents. Please check your internet connection and try signing in again.';
+    }
+
+    // Throw user-friendly error
+    const friendlyError = new Error(userMessage);
+    friendlyError.code = 'PERMISSION_DENIED';
+    friendlyError.debugInfo = debugInfo; // Available for advanced error handlers
+    throw friendlyError;
   }
+
+  // Handle other Firestore errors
+  if (error instanceof FirestoreError) {
+    console.error(`Firestore Error (${error.code}):`, error.message);
+
+    // User-friendly messages for common errors
+    if (error.code === 'unavailable') {
+      throw new Error('Database is temporarily unavailable. Please check your internet connection and try again.');
+    } else if (error.code === 'not-found') {
+      throw new Error('Document not found. It may have been deleted.');
+    } else if (error.code === 'already-exists') {
+      throw new Error('A document with this name already exists.');
+    } else if (error.code === 'failed-precondition') {
+      throw new Error('Database operation failed. Please try again.');
+    }
+  }
+
+  // Re-throw unknown errors
   throw error;
 }
 

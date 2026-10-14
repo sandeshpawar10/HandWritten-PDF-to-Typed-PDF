@@ -4,5 +4,14 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+
+# Environment variables - NEVER commit these!
+.env
+.env.local
+.env.*.local
 !.env.example
+
+# Firebase private keys
+**/serviceAccountKey.json
+firebase-debug.log
+.firebase/
