@@ -9,7 +9,7 @@ import { auth } from '../lib/firebase.js';
 // Issue #18: Extract magic numbers to named constants
 // API Configuration
 const API_BASE = import.meta.env.PROD
-  ? "https://type-doc-backend.onrender.com"
+  ? "https://typeddoc.onrender.com"
   : "http://localhost:3001";
 const PROXY_OCR_URL  = `${API_BASE}/api/ocr`;
 const PROXY_CHAT_URL = `${API_BASE}/api/chat`;
