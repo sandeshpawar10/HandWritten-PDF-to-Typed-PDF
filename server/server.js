@@ -10,35 +10,35 @@ const port = process.env.PORT || 3001;
 
 // CORS Configuration - supports dynamic origins via environment variables
 const getAllowedOrigins = () => {
-  if (process.env.NODE_ENV === 'production') {
-    // Production: Use environment variable or infer from Render
-    const origins = [
-      'https://typed-doc.web.app',  // Firebase Hosting domain
-      'https://ai-studio-applet-webapp-a82b5.web.app',  // Firebase project domain
-      'https://ai-studio-applet-webapp-a82b5.firebaseapp.com'  // Firebase app domain
-    ];
+  // Production origins (always include these)
+  const origins = [
+    'https://typed-doc.web.app',  // Firebase Hosting domain
+    'https://ai-studio-applet-webapp-a82b5.web.app',  // Firebase project domain
+    'https://ai-studio-applet-webapp-a82b5.firebaseapp.com'  // Firebase app domain
+  ];
 
-    // Add custom frontend URL from env
-    if (process.env.FRONTEND_URL) {
-      origins.push(process.env.FRONTEND_URL);
-    }
-
-    // Add Render URLs if available
-    if (process.env.RENDER_EXTERNAL_URL) {
-      origins.push(process.env.RENDER_EXTERNAL_URL);
-    }
-
-    console.log('✓ CORS allowed origins:', origins);
-    return origins;
+  // Add custom frontend URL from env
+  if (process.env.FRONTEND_URL) {
+    origins.push(process.env.FRONTEND_URL);
   }
 
-  // Development: Allow common local dev servers
-  return [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:5173', // Vite default
-    'http://127.0.0.1:5173'
-  ];
+  // Add Render URLs if available
+  if (process.env.RENDER_EXTERNAL_URL) {
+    origins.push(process.env.RENDER_EXTERNAL_URL);
+  }
+
+  // Development: Add localhost only in development mode
+  if (process.env.NODE_ENV !== 'production') {
+    origins.push(
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:5173', // Vite default
+      'http://127.0.0.1:5173'
+    );
+  }
+
+  console.log('✓ CORS allowed origins:', origins);
+  return origins;
 };
 
 const corsOptions = {
