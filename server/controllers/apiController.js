@@ -1,9 +1,8 @@
-import { runGoogleVisionOCR } from '../services/googleVisionService.js';
+import { runPaddleOCR } from '../services/paddleOcrService.js';
 
 export const handleOcr = async (req, res) => {
   try {
-    // Use Google Vision API for OCR (better accuracy and free tier)
-    const data = await runGoogleVisionOCR(req.body);
+    const data = await runPaddleOCR(req.body);
     res.json(data);
   } catch (error) {
     console.error('OCR Proxy Error:', error);
