@@ -72,7 +72,9 @@ async function apiFetch(url, body, onProgress) {
       const data = await res.json();
       if (res.ok) return data;
 
-      const msg = data?.message || data?.error?.message || `HTTP ${res.status}`;
+      // Extract error message from response
+      const errorMsg = data?.error || data?.message || `HTTP ${res.status}`;
+      const errorType = data?.type || 'UNKNOWN';
 
       if (isRateLimit(res.status, data) && attempt < MAX_RETRIES) {
         const d = retryDelay(res.headers, attempt);
@@ -81,7 +83,7 @@ async function apiFetch(url, body, onProgress) {
         continue;
       }
 
-      // Better error messages
+      // Handle specific error types
       if (res.status === 429) {
         throw new Error(`Rate limit exceeded. Please wait a few minutes and try again.`);
       }
@@ -91,8 +93,24 @@ async function apiFetch(url, body, onProgress) {
       if (res.status === 413) {
         throw new Error("File too large for server. Please reduce file size or split into smaller documents.");
       }
+      if (res.status === 503 || errorType === 'SPAWN_ERROR') {
+        throw new Error("OCR service is temporarily unavailable. The server may be starting up or under maintenance. Please try again in a few moments.");
+      }
+      if (res.status === 504 || errorType === 'TIMEOUT') {
+        throw new Error("Processing took too long. Please try a smaller or simpler document.");
+      }
+      if (res.status === 500) {
+        // Provide helpful messages for common server errors
+        if (errorMsg.includes('Python') || errorMsg.includes('dependencies')) {
+          throw new Error("Server configuration error. Please contact support.");
+        }
+        if (errorMsg.includes('memory') || errorMsg.includes('Memory')) {
+          throw new Error("Server ran out of memory. Please try a smaller document or contact support.");
+        }
+        throw new Error(`Server error: ${errorMsg}`);
+      }
 
-      lastErr = new Error(msg);
+      lastErr = new Error(errorMsg);
       throw lastErr;
 
     } catch (error) {
