@@ -1,15 +1,164 @@
 #!/usr/bin/env python3
 """
 PaddleOCR script for document text extraction
-Receives base64 image via stdin, outputs JSON to stdout
+Optimized for speed and formatted output
 """
 import sys
 import json
 import base64
 import io
+import re
 from paddleocr import PaddleOCR
 from PIL import Image
 import fitz  # PyMuPDF for PDF handling
+
+# Global OCR instance (reusable across calls if process is kept alive)
+_ocr_instance = None
+
+def get_ocr_instance():
+    """Lazy-load and reuse OCR instance for performance"""
+    global _ocr_instance
+    if _ocr_instance is None:
+        _ocr_instance = PaddleOCR(
+            use_angle_cls=True,
+            lang='en',
+            show_log=False,
+            use_gpu=False,
+            # Performance optimizations
+            det_db_thresh=0.3,        # Detection threshold (lower = faster, less accurate)
+            det_db_box_thresh=0.5,    # Box threshold
+            det_db_unclip_ratio=1.6,  # Text region expansion
+            use_dilation=True,        # Better text detection
+            det_limit_side_len=960,   # Max side length (balance speed/quality)
+            rec_batch_num=6,          # Process 6 text regions at once (faster)
+        )
+    return _ocr_instance
+
+def format_text_lines(lines_data):
+    """
+    Format OCR output into neat, readable paragraphs
+    Groups lines by vertical position and adds proper spacing
+    """
+    if not lines_data:
+        return "No text detected"
+
+    # Sort lines by vertical position (top to bottom)
+    sorted_lines = sorted(lines_data, key=lambda x: x['box'][0][1])
+
+    formatted_text = []
+    current_paragraph = []
+    last_y = 0
+    line_height_threshold = 30  # Pixels between lines to start new paragraph
+
+    for line in sorted_lines:
+        y_pos = line['box'][0][1]
+        text = line['text'].strip()
+
+        if not text:
+            continue
+
+        # Check if this is a new paragraph (large vertical gap)
+        if last_y > 0 and (y_pos - last_y) > line_height_threshold:
+            # Finish current paragraph
+            if current_paragraph:
+                formatted_text.append(' '.join(current_paragraph))
+                current_paragraph = []
+
+        current_paragraph.append(text)
+        last_y = y_pos + (line['box'][2][1] - line['box'][0][1])
+
+    # Add final paragraph
+    if current_paragraph:
+        formatted_text.append(' '.join(current_paragraph))
+
+    # Join paragraphs with double newlines
+    return '\n\n'.join(formatted_text)
+
+def detect_structure(lines_data):
+    """
+    Detect document structure (headings, lists, etc.)
+    Returns formatted markdown
+    """
+    if not lines_data:
+        return "No text detected"
+
+    sorted_lines = sorted(lines_data, key=lambda x: x['box'][0][1])
+
+    markdown_lines = []
+    last_y = 0
+
+    for line in sorted_lines:
+        y_pos = line['box'][0][1]
+        text = line['text'].strip()
+        confidence = line['confidence']
+
+        if not text:
+            continue
+
+        # Detect headings (shorter, higher confidence, possibly larger font)
+        is_heading = (
+            len(text.split()) <= 8 and
+            confidence > 0.85 and
+            text[0].isupper()
+        )
+
+        # Detect bullet points
+        is_bullet = text.startswith(('•', '-', '*', '·')) or re.match(r'^\d+[\.)]\s', text)
+
+        # Add spacing for new sections
+        if last_y > 0 and (y_pos - last_y) > 40:
+            markdown_lines.append('')
+
+        # Format based on detection
+        if is_heading:
+            markdown_lines.append(f'## {text}')
+        elif is_bullet:
+            # Clean up bullet point
+            text = re.sub(r'^[•\-*·]\s*', '- ', text)
+            text = re.sub(r'^\d+[\.)]\s*', lambda m: f'{m.group()[:-1]}. ', text)
+            markdown_lines.append(text)
+        else:
+            markdown_lines.append(text)
+
+        last_y = y_pos + (line['box'][2][1] - line['box'][0][1])
+
+    return '\n'.join(markdown_lines)
+
+def process_page(ocr, image):
+    """Process a single page and return structured data"""
+    result = ocr.ocr(image, cls=True)
+
+    lines_data = []
+    total_confidence = 0
+    line_count = 0
+
+    if result and result[0]:
+        for line in result[0]:
+            box = line[0]  # Bounding box coordinates
+            text = line[1][0]
+            confidence = line[1][1]
+
+            lines_data.append({
+                'box': box,
+                'text': text,
+                'confidence': confidence
+            })
+
+            total_confidence += confidence
+            line_count += 1
+
+    avg_confidence = total_confidence / line_count if line_count > 0 else 0
+
+    # Generate both plain and markdown formatted versions
+    plain_text = format_text_lines(lines_data)
+    markdown_text = detect_structure(lines_data)
+
+    return {
+        'text': plain_text,
+        'markdown': markdown_text,
+        'confidence': round(avg_confidence, 3),
+        'line_count': line_count
+    }
 
 def main():
     try:
@@ -24,19 +173,11 @@ def main():
         # Decode base64 image
         image_bytes = base64.b64decode(base64_image)
 
-        # Check if it's a PDF by looking at magic bytes
+        # Check if it's a PDF
         is_pdf = image_bytes[:4] == b'%PDF'
 
-        # Initialize PaddleOCR once (moved outside conditional for reuse)
-        ocr = PaddleOCR(
-            use_angle_cls=True,
-            lang='en',
-            show_log=False,
-            use_gpu=False,
-            det_model_dir=None,  # Use default models
-            rec_model_dir=None,
-            cls_model_dir=None
-        )
+        # Get OCR instance
+        ocr = get_ocr_instance()
 
         if is_pdf:
             # Handle PDF: convert each page to image
@@ -52,35 +193,19 @@ def main():
             for page_num in range(max_pages):
                 page = pdf_document[page_num]
 
-                # Render page to image (1.5x scale - balance quality vs speed)
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                # Optimized rendering: 1.5x scale, good balance
+                # Use 2.0x for better quality but slower processing
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
                 img_data = pix.tobytes("png")
                 image = Image.open(io.BytesIO(img_data))
 
-                # Run OCR on this page
-                result = ocr.ocr(image, cls=True)
+                # Optional: Convert to grayscale for faster processing
+                # Uncomment if speed is more important than color accuracy
+                # image = image.convert('L')
 
-                # Extract text and confidence
-                text_lines = []
-                total_confidence = 0
-                line_count = 0
-
-                if result and result[0]:
-                    for line in result[0]:
-                        text = line[1][0]
-                        confidence = line[1][1]
-                        text_lines.append(text)
-                        total_confidence += confidence
-                        line_count += 1
-
-                avg_confidence = total_confidence / line_count if line_count > 0 else 0
-                full_text = '\n'.join(text_lines) if text_lines else "No text detected on this page"
-
-                pages_results.append({
-                    "text": full_text,
-                    "markdown": full_text,
-                    "confidence": round(avg_confidence, 3)
-                })
+                # Process page
+                page_result = process_page(ocr, image)
+                pages_results.append(page_result)
 
             pdf_document.close()
 
@@ -91,35 +216,14 @@ def main():
             # Handle regular image
             image = Image.open(io.BytesIO(image_bytes))
 
-            # Run OCR
-            result = ocr.ocr(image, cls=True)
+            # Optional: Enhance image quality for better OCR
+            # from PIL import ImageEnhance
+            # enhancer = ImageEnhance.Contrast(image)
+            # image = enhancer.enhance(1.5)
 
-            # Extract text and confidence scores
-            text_lines = []
-            total_confidence = 0
-            line_count = 0
-
-            if result and result[0]:
-                for line in result[0]:
-                    text = line[1][0]
-                    confidence = line[1][1]
-                    text_lines.append(text)
-                    total_confidence += confidence
-                    line_count += 1
-
-            avg_confidence = total_confidence / line_count if line_count > 0 else 0
-            full_text = '\n'.join(text_lines) if text_lines else "No text detected in image"
-
-            # Output JSON result
-            output = {
-                "pages": [
-                    {
-                        "text": full_text,
-                        "markdown": full_text,
-                        "confidence": round(avg_confidence, 3)
-                    }
-                ]
-            }
+            # Process image
+            page_result = process_page(ocr, image)
+            output = {"pages": [page_result]}
 
         print(json.dumps(output))
         sys.exit(0)

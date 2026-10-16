@@ -8,11 +8,13 @@ import {
 import { auth, signInWithGoogle, logOut } from './lib/firebase';
 import { subscribeToDocuments, createDocument, subscribeToVersions } from './services/documents';
 import { convertHandwritingToText } from './services/ocr';
+import { convertToFormattedDocument } from './services/formattedOcr';
 import { FileUpload } from './components/FileUpload';
 import { DocumentList } from './components/DocumentList';
 import { Editor } from './components/Editor';
 import { OfflineBanner } from './components/OfflineBanner';
 import { ToastContainer, toast } from './components/Toast';
+import { FormattedDocumentViewer } from './components/FormattedDocumentViewer';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 import { cn } from './lib/utils';
@@ -37,6 +39,7 @@ export default function App() {
   const [globalError, setGlobalError] = useState(null);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [authError, setAuthError] = useState(null);
+  const [formattedDocument, setFormattedDocument] = useState(null);
 
   const handleSignIn = async () => {
     setAuthError(null);
@@ -83,17 +86,40 @@ export default function App() {
 
       setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'converting' } : j));
       try {
-        const text = await convertHandwritingToText(job.file, (status) => {
+        // Use formatted OCR service for PDF/DOCX generation
+        const result = await convertToFormattedDocument(job.file, (status) => {
           setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'converting', error: status } : j));
         });
-        if (!text || text.trim().length === 0) throw new Error('No text extracted.');
+
+        if (!result.text || result.text.trim().length === 0) throw new Error('No text extracted.');
+
         const title = job.file.name.replace(/\.[^/.]+$/, "");
-        await createDocument(user.uid, title, text, job.file.name);
-        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'completed', content: text, error: undefined } : j));
+        await createDocument(user.uid, title, result.text, job.file.name);
+
+        setJobs(prev => prev.map(j => j.id === job.id ? {
+          ...j,
+          status: 'completed',
+          content: result.text,
+          formattedPdf: result.formattedPdf,
+          formattedDocx: result.formattedDocx,
+          error: undefined
+        } : j));
+
+        // Auto-show formatted document viewer for the first completed job
+        if (idx === 0 && result.formattedPdf) {
+          setFormattedDocument({
+            pdf: result.formattedPdf,
+            docx: result.formattedDocx,
+            filename: job.file.name
+          });
+        }
+
+        toast.success(`✨ Document formatted successfully!`);
       } catch (err) {
         console.error(`Job ${job.id} failed:`, err);
         const errorMessage = err?.message || 'Processing failed. Please try again.';
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: errorMessage } : j));
+        toast.error(errorMessage);
       }
     }
   };
@@ -431,6 +457,19 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Formatted Document Viewer Modal */}
+      {formattedDocument && (
+        <FormattedDocumentViewer
+          formattedPdf={formattedDocument.pdf}
+          formattedDocx={formattedDocument.docx}
+          filename={formattedDocument.filename}
+          onClose={() => setFormattedDocument(null)}
+        />
+      )}
+
+      {/* Toast Notifications */}
+      <ToastContainer />
     </div>
   );
 }
