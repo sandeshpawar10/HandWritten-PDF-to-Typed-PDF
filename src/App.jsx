@@ -9,12 +9,14 @@ import { auth, signInWithGoogle, logOut } from './lib/firebase';
 import { subscribeToDocuments, createDocument, subscribeToVersions } from './services/documents';
 import { convertHandwritingToText } from './services/ocr';
 import { convertToFormattedDocument } from './services/formattedOcr';
+import { convertToFormattedDocumentChunked } from './services/chunkedOcr';
 import { FileUpload } from './components/FileUpload';
 import { DocumentList } from './components/DocumentList';
 import { Editor } from './components/Editor';
 import { OfflineBanner } from './components/OfflineBanner';
 import { ToastContainer, toast } from './components/Toast';
 import { FormattedDocumentViewer } from './components/FormattedDocumentViewer';
+import { ChunkedProgressBar } from './components/ChunkedProgressBar';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 import { cn } from './lib/utils';
@@ -40,6 +42,7 @@ export default function App() {
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [formattedDocument, setFormattedDocument] = useState(null);
+  const [processingProgress, setProcessingProgress] = useState(null);
 
   const handleSignIn = async () => {
     setAuthError(null);
@@ -86,10 +89,24 @@ export default function App() {
 
       setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'converting' } : j));
       try {
-        // Use formatted OCR service for PDF/DOCX generation
-        const result = await convertToFormattedDocument(job.file, (status) => {
-          setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'converting', error: status } : j));
+        // Use chunked OCR service for unlimited pages
+        const result = await convertToFormattedDocumentChunked(job.file, (progress) => {
+          // Update progress state
+          setProcessingProgress({
+            jobId: job.id,
+            ...progress
+          });
+
+          // Update job status with progress message
+          setJobs(prev => prev.map(j => j.id === job.id ? {
+            ...j,
+            status: 'converting',
+            error: progress.message
+          } : j));
         });
+
+        // Clear progress
+        setProcessingProgress(null);
 
         if (!result.text || result.text.trim().length === 0) throw new Error('No text extracted.');
 
@@ -102,6 +119,8 @@ export default function App() {
           content: result.text,
           formattedPdf: result.formattedPdf,
           formattedDocx: result.formattedDocx,
+          totalPages: result.totalPages,
+          pagesProcessed: result.pagesProcessed,
           error: undefined
         } : j));
 
@@ -114,9 +133,14 @@ export default function App() {
           });
         }
 
-        toast.success(`✨ Document formatted successfully!`);
+        // Success notification with page count
+        toast.success(
+          `✨ Document formatted successfully! (${result.pagesProcessed} pages processed)`
+        );
+
       } catch (err) {
         console.error(`Job ${job.id} failed:`, err);
+        setProcessingProgress(null);
         const errorMessage = err?.message || 'Processing failed. Please try again.';
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: errorMessage } : j));
         toast.error(errorMessage);
