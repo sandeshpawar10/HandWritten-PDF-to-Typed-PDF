@@ -137,7 +137,7 @@ function parseMarkdownBlocks(content) {
 
 function parseInlineRuns(text) {
   const runs = [];
-  const regex = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\$[^\$]+\$|\*[^*]+\*|_[^_]+_|[^*_`\$]+)/g;
+  const regex = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\$[^$]+\$|\*[^*]+\*|_[^_]+_|[^*_`$]+)/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     const seg = match[1];
@@ -303,7 +303,6 @@ export async function exportToPdf(title, content) {
   const printEl = document.getElementById('pdf-export-content');
   if (!printEl) {
     throw new Error('The document preview is not ready for PDF export.');
-    return;
   }
 
   // Use the browser's paged PDF engine. Unlike canvas-based export, it can

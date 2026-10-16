@@ -134,7 +134,7 @@ Your job is to REFORMAT it and CORRECT OCR ERRORS silently without changing the 
 
 ## 3. MATHEMATICAL RECONSTRUCTION
 - Every mathematical expression MUST be wrapped in LaTeX delimiters ($ or $$).
-- If an equation comes in scrambled (e.g., "⌈log n!⌉ 2 Cworst(n) ≥ ⌈log n!⌉ 2 n!"), DO NOT blindly copy the garbage. Use your context of Stirling's approximation, time complexities, or bounds to output the mathematically correct equation: $$ C_{worst}(n) \ge \\lceil \\log_2 n! \\rceil $$
+- If an equation comes in scrambled (e.g., "⌈log n!⌉ 2 Cworst(n) ≥ ⌈log n!⌉ 2 n!"), DO NOT blindly copy the garbage. Use your context of Stirling's approximation, time complexities, or bounds to output the mathematically correct equation: $$ C_{worst}(n) \\ge \\lceil \\log_2 n! \\rceil $$
 - Convert written fractions like a/b to $\\frac{a}{b}$, and fix scrambled logarithms and inequalities.
 
 ## 4. DIAGRAM TEXT RECOVERY

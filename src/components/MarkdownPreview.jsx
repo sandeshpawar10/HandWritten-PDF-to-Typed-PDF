@@ -192,7 +192,7 @@ function parseMarkdown(md) {
 
   const isAutoHeading = (text) =>
     /^\d+(?:\.\d+)+\s+.+$/.test(text) ||
-    /^(?:[A-Z][A-Za-z0-9&/()'\-]*)(?:\s+[A-Z][A-Za-z0-9&/()'\-]*){0,7}$/.test(text);
+    /^(?:[A-Z][A-Za-z0-9&/()''-]*)(?:\s+[A-Z][A-Za-z0-9&/()''-]*){0,7}$/.test(text);
 
   while (i < lines.length) {
     const line    = lines[i];
