@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertTriangle, X } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -5,35 +6,51 @@ import { cn } from '../lib/utils';
 /**
  * Issue #10: Professional confirmation dialog to replace browser confirm()
  */
-export function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmText = 'Confirm', cancelText = 'Cancel', variant = 'default' }) {
-  if (!isOpen) return null;
+export function ConfirmDialog({ isOpen, onClose, onConfirm, onCancel, title, message, confirmText = 'Confirm', cancelText = 'Cancel', variant = 'default' }) {
+  const handleCancel = onCancel || onClose;
+
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        if (onCancel) onCancel();
+        else if (onClose) onClose();
+      }
+    };
+    if (isOpen) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onCancel, onClose]);
 
   const handleConfirm = () => {
-    onConfirm();
-    onClose();
+    onConfirm?.();
+    if (onClose) onClose();
+    else if (onCancel) onCancel();
   };
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {isOpen && (
-        <>
+        <motion.div
+          key="confirm-dialog-wrapper"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
           {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-[#3D2E1C]/60 backdrop-blur-sm z-50"
-            onClick={onClose}
+          <div
+            className="fixed inset-0 bg-[#3D2E1C]/60 backdrop-blur-sm"
+            onClick={handleCancel}
           />
 
           {/* Dialog */}
           <motion.div
+            role="dialog"
+            aria-modal="true"
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="relative z-10 bg-[#FFFBF5] border border-[#E8DFD0] rounded-3xl shadow-2xl max-w-md w-full p-6"
           >
-            <div className="bg-[#FFFBF5] border border-[#E8DFD0] rounded-3xl shadow-2xl max-w-md w-full p-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   {variant === 'danger' && (
@@ -44,7 +61,7 @@ export function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, conf
                   <h3 className="text-lg font-serif font-black text-[#3D2E1C]">{title}</h3>
                 </div>
                 <button
-                  onClick={onClose}
+                  onClick={handleCancel}
                   className="p-1.5 rounded-xl hover:bg-[#E8DFD0] transition-colors text-[#8C7B6B]"
                   aria-label="Close dialog"
                 >
@@ -56,7 +73,7 @@ export function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, conf
 
               <div className="flex gap-3">
                 <button
-                  onClick={onClose}
+                  onClick={handleCancel}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-white border border-[#E8DFD0] text-[#3D2E1C] font-medium hover:bg-[#F5F0E8] transition-colors"
                 >
                   {cancelText}
@@ -73,9 +90,8 @@ export function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, conf
                   {confirmText}
                 </button>
               </div>
-            </div>
           </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   );

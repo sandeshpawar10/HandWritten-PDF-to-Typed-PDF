@@ -31,10 +31,10 @@ export const handleOcr = async (req, res) => {
 
     res.status(statusCode).json({
       error: errorMessage,
+      type: error.data?.type || error.type,
       timestamp: new Date().toISOString(),
       ...(process.env.NODE_ENV !== 'production' && {
         details: error.data,
-        type: error.type
       })
     });
   }

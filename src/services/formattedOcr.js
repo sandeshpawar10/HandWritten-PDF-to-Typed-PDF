@@ -66,7 +66,12 @@ async function apiFetch(url, body, onProgress) {
 
       clearTimeout(timeoutId);
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseError) {
+        throw new Error(`Server returned non-JSON response (HTTP ${res.status}). The server may be overloaded or unavailable.`);
+      }
       if (res.ok) return data;
 
       const errorMsg = data?.error || data?.message || `HTTP ${res.status}`;

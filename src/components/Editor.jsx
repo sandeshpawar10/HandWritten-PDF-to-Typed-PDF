@@ -22,9 +22,42 @@ export function Editor({ doc, onBack, versions }) {
   // Issue #10: Replace confirm() with proper modal
   const [restoreVersion, setRestoreVersion] = useState(null);
 
-  // Auto-save timer ref
-  const autoSaveTimer = useRef(null);
   const saveTimeoutRef = useRef(null);
+  const latestContentRef = useRef(content);
+  const latestTitleRef = useRef(title);
+  const isDirtyRef = useRef(isDirty);
+  const docRef = useRef(doc);
+
+  useEffect(() => {
+    latestContentRef.current = content;
+    latestTitleRef.current = title;
+    isDirtyRef.current = isDirty;
+    docRef.current = doc;
+  }, [content, title, isDirty, doc]);
+
+  useEffect(() => {
+    return () => {
+      // Save on unmount if there are pending changes
+      if (saveTimeoutRef.current || isDirtyRef.current) {
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+        }
+        if (isDirtyRef.current && docRef.current?.id) {
+          updateDocument(docRef.current.id, {
+            content: latestContentRef.current,
+            title: latestTitleRef.current,
+          }).catch(err => console.error('Unmount save error:', err));
+          saveVersion(
+            docRef.current.id,
+            docRef.current.userId,
+            latestContentRef.current,
+            'Auto-save on unmount'
+          ).catch(err => console.error('Unmount saveVersion error:', err));
+        }
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setContent(doc.content);
@@ -34,13 +67,14 @@ export function Editor({ doc, onBack, versions }) {
 
   // Memoized stats — only recalculates when content changes, not on every render
   const stats = useMemo(() => {
-    const trimmed = content.trim();
+    const safeContent = content || '';
+    const trimmed = safeContent.trim();
     const words = trimmed ? trimmed.split(/\s+/).length : 0;
     return {
       words,
-      chars: content.length,
+      chars: safeContent.length,
       readTime: Math.max(1, Math.ceil(words / 200)),
-      pages: (content.match(/^--- Page \d+ ---$/m) || []).length + 1,
+      pages: (safeContent.match(/^--- Page \d+ ---$/m) || []).length + 1,
     };
   }, [content]);
 
@@ -129,8 +163,16 @@ export function Editor({ doc, onBack, versions }) {
     } finally {
       setTimeout(() => {
         setIsExporting(null);
-        // Keep print preview for a bit in case the print dialog is still open
-        setTimeout(() => setShowPrintPreview(false), 3000);
+        if (format === 'pdf') {
+          const cleanupPrint = () => {
+            setShowPrintPreview(false);
+            window.removeEventListener('afterprint', cleanupPrint);
+          };
+          window.addEventListener('afterprint', cleanupPrint, { once: true });
+          setTimeout(cleanupPrint, 10000);
+        } else {
+          setShowPrintPreview(false);
+        }
       }, 1000);
     }
   };
@@ -326,7 +368,7 @@ export function Editor({ doc, onBack, versions }) {
                   <div className="mb-12 pb-8 border-b border-[#E8DFD0]">
                     <h1 className="text-6xl font-serif font-black text-[#3D2E1C] leading-tight tracking-tighter-title">{title}</h1>
                   </div>
-                  {content.trim() ? <MarkdownPreview content={content} /> : <div className="flex flex-col items-center justify-center py-32 opacity-50"><Sparkles className="w-12 h-12 mb-4 text-[#8B5E3C]" /><p className="font-serif font-bold tracking-wide text-sm text-[#3D2E1C]">Your document will appear here</p></div>}
+                  {(content || '').trim() ? <MarkdownPreview content={content} /> : <div className="flex flex-col items-center justify-center py-32 opacity-50"><Sparkles className="w-12 h-12 mb-4 text-[#8B5E3C]" /><p className="font-serif font-bold tracking-wide text-sm text-[#3D2E1C]">Your document will appear here</p></div>}
                 </motion.div>
               )}
             </AnimatePresence>

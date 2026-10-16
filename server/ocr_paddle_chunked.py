@@ -140,6 +140,8 @@ def process_chunk(pdf_doc, chunk_start, chunk_end, total_pages):
 
         # Process page
         page_content = process_page(ocr, image)
+        if page_num > 0:
+            chunk_results.append({'type': 'page_break', 'text': ''})
         chunk_results.extend(page_content)
 
         # Free memory
@@ -148,6 +150,22 @@ def process_chunk(pdf_doc, chunk_start, chunk_end, total_pages):
         gc.collect()
 
     return chunk_results
+
+def escape_reportlab_text(text):
+    """
+    Escape XML special characters and handle non-ASCII characters safely for ReportLab
+    """
+    if not text:
+        return ""
+    # Escape XML entities
+    text = (
+        text.replace('&', '&amp;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+        .replace('"', '&quot;')
+    )
+    # Handle non-ASCII characters safely using XML numeric character references
+    return text.encode('ascii', 'xmlcharrefreplace').decode('ascii')
 
 def create_formatted_pdf(structured_content):
     """Create formatted PDF using ReportLab"""
@@ -245,12 +263,33 @@ def create_formatted_pdf(structured_content):
     story = []
     first_heading = True
 
-    for item in structured_content:
-        text = item['text']
-        text_type = item['type']
+    # Normalize input: if structured_content is a list of pages (lists), flatten with page breaks
+    flat_content = []
+    if structured_content and isinstance(structured_content[0], list):
+        for idx, page_items in enumerate(structured_content):
+            if idx > 0:
+                flat_content.append({'type': 'page_break', 'text': ''})
+            flat_content.extend(page_items)
+    else:
+        flat_content = structured_content
 
-        # Escape special characters
-        text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    for item in flat_content:
+        text_type = item.get('type')
+
+        # Add page breaks between pages
+        if text_type == 'page_break':
+            story.append(PageBreak())
+            continue
+
+        text = item.get('text', '')
+        if not text:
+            continue
+
+        if text_type == 'bullet':
+            text = re.sub(r'^[•\-*·]\s*', '', text)
+
+        # Escape special characters and handle non-ASCII safely for ReportLab
+        text = escape_reportlab_text(text)
 
         if text_type == 'heading':
             if first_heading:
@@ -262,8 +301,7 @@ def create_formatted_pdf(structured_content):
         elif text_type == 'subheading':
             story.append(Paragraph(text, subheading_style))
         elif text_type == 'bullet':
-            text = re.sub(r'^[•\-*·]\s*', '', text)
-            story.append(Paragraph(f'• {text}', bullet_style))
+            story.append(Paragraph(f'&bull; {text}', bullet_style))
         elif text_type == 'code':
             story.append(Paragraph(text, code_style))
         elif text_type == 'formula':
@@ -289,9 +327,27 @@ def create_formatted_docx(structured_content):
 
     first_heading = True
 
-    for item in structured_content:
-        text = item['text']
-        text_type = item['type']
+    # Normalize input: if structured_content is a list of pages (lists), flatten with page breaks
+    flat_content = []
+    if structured_content and isinstance(structured_content[0], list):
+        for idx, page_items in enumerate(structured_content):
+            if idx > 0:
+                flat_content.append({'type': 'page_break', 'text': ''})
+            flat_content.extend(page_items)
+    else:
+        flat_content = structured_content
+
+    for item in flat_content:
+        text_type = item.get('type')
+
+        # Add page breaks between pages
+        if text_type == 'page_break':
+            doc.add_page_break()
+            continue
+
+        text = item.get('text', '')
+        if not text:
+            continue
 
         if text_type == 'heading':
             if first_heading:
@@ -304,7 +360,10 @@ def create_formatted_docx(structured_content):
             heading = doc.add_heading(text, level=3)
         elif text_type == 'bullet':
             text = re.sub(r'^[•\-*·]\s*', '', text)
-            doc.add_paragraph(text, style='List Bullet')
+            try:
+                doc.add_paragraph(text, style='List Bullet')
+            except Exception:
+                doc.add_paragraph(f'• {text}')
         elif text_type == 'code':
             p = doc.add_paragraph()
             run = p.add_run(text)
@@ -330,13 +389,18 @@ def create_formatted_docx(structured_content):
 def process_pdf_chunked(pdf_bytes):
     """Process large PDF in chunks"""
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    total_pages = len(pdf_doc)
+    original_count = len(pdf_doc)
+    is_truncated = original_count > MAX_PAGES
 
     # Safety limit
-    if total_pages > MAX_PAGES:
-        print(f"Warning: PDF has {total_pages} pages. Processing first {MAX_PAGES} pages.",
-              file=sys.stderr)
+    if is_truncated:
+        print(json.dumps({
+            "type": "warning",
+            "message": f"PDF has {original_count} pages. Processing first {MAX_PAGES} pages."
+        }), file=sys.stderr)
         total_pages = MAX_PAGES
+    else:
+        total_pages = original_count
 
     send_progress(0, total_pages, f"Starting processing of {total_pages} pages...")
 
@@ -365,9 +429,9 @@ def process_pdf_chunked(pdf_bytes):
     formatted_docx = create_formatted_docx(all_content)
 
     # Generate plain text
-    plain_text = '\n\n'.join([item['text'] for item in all_content])
+    plain_text = '\n\n'.join([item['text'] for item in all_content if item.get('text')])
 
-    return {
+    result = {
         "text": plain_text,
         "structured_content": all_content,
         "formatted_pdf": formatted_pdf,
@@ -375,6 +439,12 @@ def process_pdf_chunked(pdf_bytes):
         "total_pages": total_pages,
         "pages_processed": total_pages
     }
+
+    if is_truncated:
+        result["truncated"] = True
+        result["total_actual_pages"] = original_count
+
+    return result
 
 def main():
     try:
@@ -396,7 +466,7 @@ def main():
 
             formatted_pdf = create_formatted_pdf(structured_content)
             formatted_docx = create_formatted_docx(structured_content)
-            plain_text = '\n'.join([item['text'] for item in structured_content])
+            plain_text = '\n'.join([item['text'] for item in structured_content if item.get('text')])
 
             output = {
                 "text": plain_text,

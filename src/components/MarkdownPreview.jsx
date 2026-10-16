@@ -7,10 +7,11 @@ import 'katex/dist/katex.min.css';
 // ─────────────────────────────────────────────
 function escapeHtml(str) {
   return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 // ─────────────────────────────────────────────
@@ -120,7 +121,10 @@ function inlineFormat(raw) {
     });
 
     // Links
-    t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="md-link" target="_blank" rel="noreferrer">$1</a>');
+    t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+      const safeUrl = /^(https?:\/\/|mailto:|tel:|#|\/)/i.test(url) ? url : '#';
+      return `<a href="${safeUrl}" class="md-link" target="_blank" rel="noreferrer">${text}</a>`;
+    });
     
     return t;
   }).join("");
@@ -168,6 +172,7 @@ function parseTable(tableLines) {
 //  Main parser
 // ─────────────────────────────────────────────
 function parseMarkdown(md) {
+  if (!md) return "";
   let cleanMd = md;
 
   const lines = cleanMd.split("\n");
@@ -191,8 +196,10 @@ function parseMarkdown(md) {
   };
 
   const isAutoHeading = (text) =>
-    /^\d+(?:\.\d+)+\s+.+$/.test(text) ||
-    /^(?:[A-Z][A-Za-z0-9&/()''-]*)(?:\s+[A-Z][A-Za-z0-9&/()''-]*){0,7}$/.test(text);
+    text.length < 60 && (
+      /^\d+(?:\.\d+)+\s+.+$/.test(text) ||
+      /^(?:[A-Z][A-Za-z0-9&/()''-]*)(?:\s+[A-Z][A-Za-z0-9&/()''-]*){1,4}$/.test(text)
+    );
 
   while (i < lines.length) {
     const line    = lines[i];
@@ -201,7 +208,7 @@ function parseMarkdown(md) {
     // ── Fenced code block ──
     if (trimmed.startsWith("```")) {
       if (inCodeBlock) {
-        out.push(`<pre class="md-code-block"><code${codeLang ? ` class="language-${escapeHtml(codeLang)}"` : ""}>${codeContent.join("\n")}</code></pre>`);
+        out.push(`<pre class="md-code-block"><code${codeLang ? ` class="language-${escapeHtml(codeLang)}"` : ""}>${escapeHtml(codeContent.join("\n"))}</code></pre>`);
         codeContent = []; codeLang = ""; inCodeBlock = false;
       } else {
         closeList();
@@ -421,7 +428,7 @@ function parseMarkdown(md) {
   
   // Handle unclosed blocks
   if (inCodeBlock && codeContent.length > 0) {
-    out.push(`<pre class="md-code-block"><code>${codeContent.join("\n")}</code></pre>`);
+    out.push(`<pre class="md-code-block"><code>${escapeHtml(codeContent.join("\n"))}</code></pre>`);
   }
   if (inMathBlock && mathContent.length > 0) {
     out.push(renderDisplayMath(mathContent.join("\n")));

@@ -24,10 +24,13 @@ export const signInWithGoogle = async () => {
   } catch (error) {
     const code = error?.code || '';
     
-    // These errors mean popup was blocked or domain isn't authorized — fall back to redirect
+    if (code === 'auth/unauthorized-domain') {
+      throw error; // Let the caller handle it
+    }
+
+    // These errors mean popup was blocked or cancelled — fall back to redirect
     if (
       code === 'auth/popup-blocked' ||
-      code === 'auth/unauthorized-domain' ||
       code === 'auth/cancelled-popup-request'
     ) {
       console.warn(`Popup auth failed (${code}), trying redirect...`);
@@ -70,8 +73,12 @@ export const logOut = () => signOut(auth);
 // Test Firestore connection
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    // Only test if we have an authenticated user
+    if (auth.currentUser) {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+    }
   } catch (error) {
+    // Expected for unauthenticated users
     if (error instanceof Error && error.message.includes('the client is offline')) {
       console.error("Please check your Firebase configuration.");
     }

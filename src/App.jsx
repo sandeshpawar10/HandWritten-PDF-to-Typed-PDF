@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import {
-  FileText, Plus, LogOut, Search, Files, Sparkles, User, ArrowRight,
+  Plus, LogOut, Search, Files, Sparkles, User, ArrowRight,
   AlertTriangle, X, Menu, Table2, Zap, Shield,
-  LayoutDashboard, Layers, BookOpen
+  LayoutDashboard, BookOpen
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut } from './lib/firebase';
 import { subscribeToDocuments, createDocument, subscribeToVersions } from './services/documents';
-import { convertHandwritingToText } from './services/ocr';
-import { convertToFormattedDocument } from './services/formattedOcr';
 import { convertToFormattedDocumentChunked } from './services/chunkedOcr';
 import { FileUpload } from './components/FileUpload';
 import { DocumentList } from './components/DocumentList';
@@ -16,8 +14,6 @@ import { Editor } from './components/Editor';
 import { OfflineBanner } from './components/OfflineBanner';
 import { ToastContainer, toast } from './components/Toast';
 import { FormattedDocumentViewer } from './components/FormattedDocumentViewer';
-import { ChunkedProgressBar } from './components/ChunkedProgressBar';
-import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -29,8 +25,6 @@ const SEARCH_MIN_LENGTH = 3; // Minimum search query length for content search
 
 export default function App() {
   const [user, loading] = useAuthState(auth);
-  // Issue #30: Detect offline state
-  const isOnline = useOnlineStatus();
   const [documents, setDocuments] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [versions, setVersions] = useState([]);
@@ -77,7 +71,7 @@ export default function App() {
   const handleFilesAdded = async (files) => {
     setGlobalError(null);
     const newJobs = files.map(file => ({
-      file, id: Math.random().toString(36).substr(2, 9), status: 'pending'
+      file, id: Math.random().toString(36).substring(2, 11), status: 'pending'
     }));
     setJobs(prev => [...prev, ...newJobs]);
     setView('upload');
@@ -101,12 +95,13 @@ export default function App() {
           setJobs(prev => prev.map(j => j.id === job.id ? {
             ...j,
             status: 'converting',
-            error: progress.message
+            progressMessage: progress.message
           } : j));
         });
 
-        // Clear progress
-        setProcessingProgress(null);
+        // Let the progress show 100% briefly before clearing
+        setProcessingProgress(prev => prev ? { ...prev, percent: 100, message: 'Complete!' } : null);
+        setTimeout(() => setProcessingProgress(null), 1500);
 
         if (!result.text || result.text.trim().length === 0) throw new Error('No text extracted.');
 
@@ -121,11 +116,12 @@ export default function App() {
           formattedDocx: result.formattedDocx,
           totalPages: result.totalPages,
           pagesProcessed: result.pagesProcessed,
-          error: undefined
+          error: undefined,
+          progressMessage: undefined
         } : j));
 
-        // Auto-show formatted document viewer for the first completed job
-        if (idx === 0 && result.formattedPdf) {
+        // Auto-show formatted document viewer for the last completed job
+        if (idx === newJobs.length - 1 && result.formattedPdf) {
           setFormattedDocument({
             pdf: result.formattedPdf,
             docx: result.formattedDocx,
@@ -370,12 +366,23 @@ export default function App() {
           className="bg-white/80 backdrop-blur-sm border border-[#E8DFD0] shadow-lg rounded-2xl p-4 mb-4 hover:shadow-xl transition-all"
         >
           <div className="flex items-center gap-3 mb-4">
-            <div className="relative group">
-              <img src={user.photoURL || ''} className="w-11 h-11 rounded-2xl border-2 border-[#E8DFD0] group-hover:border-[#8B5E3C]/30 transition-all" alt="me" />
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/0 to-[#8B5E3C]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="relative group shrink-0">
+              {user.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  className="w-11 h-11 rounded-2xl border-2 border-[#E8DFD0] group-hover:border-[#8B5E3C]/30 transition-all object-cover"
+                  alt={user.displayName || 'User'}
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              ) : (
+                <div className="w-11 h-11 rounded-2xl border-2 border-[#E8DFD0] bg-[#8B5E3C]/10 flex items-center justify-center font-bold text-sm text-[#8B5E3C]">
+                  {user.displayName ? user.displayName.charAt(0).toUpperCase() : <User className="w-5 h-5 text-[#8B5E3C]" />}
+                </div>
+              )}
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/0 to-[#8B5E3C]/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[14px] font-bold text-[#3D2E1C] truncate">{user.displayName}</p>
+              <p className="text-[14px] font-bold text-[#3D2E1C] truncate">{user.displayName || 'User'}</p>
               <p className="text-[12px] text-[#8C7B6B] truncate">{user.email}</p>
             </div>
           </div>
@@ -426,7 +433,7 @@ export default function App() {
           ) : (
             <motion.div key="main" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="flex-1 overflow-y-auto">
               <div className="max-w-6xl mx-auto py-10 px-6 sm:px-10">
-                <div className="flex items-center justify-between mb-12">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-12">
                   <div className="flex items-center gap-4">
                     <button onClick={() => setMobileSidebar(true)} className="p-3 rounded-2xl bg-white border border-[#E8DFD0] shadow-sm md:hidden text-[#3D2E1C]">
                       <Menu className="w-5 h-5" />
@@ -442,10 +449,10 @@ export default function App() {
                   </div>
                   
                   {view === 'list' && (
-                    <div className="relative hidden lg:block group">
+                    <div className="relative w-full sm:w-72 lg:w-80 group">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-[#8C7B6B] group-focus-within:text-[#8B5E3C] transition-colors" />
                       <input type="text" placeholder="Search documents..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-12 pr-6 py-3.5 rounded-2xl bg-white border border-[#E8DFD0] shadow-sm text-[14px] text-[#3D2E1C] placeholder:text-[#8C7B6B] focus:border-[#8B5E3C]/40 focus:ring-0 w-80 transition-all outline-none" />
+                        className="pl-12 pr-6 py-3.5 rounded-2xl bg-white border border-[#E8DFD0] shadow-sm text-[14px] text-[#3D2E1C] placeholder:text-[#8C7B6B] focus:border-[#8B5E3C]/40 focus:ring-0 w-full transition-all outline-none" />
                     </div>
                   )}
                 </div>
@@ -496,9 +503,6 @@ export default function App() {
           onClose={() => setFormattedDocument(null)}
         />
       )}
-
-      {/* Toast Notifications */}
-      <ToastContainer />
     </div>
   );
 }

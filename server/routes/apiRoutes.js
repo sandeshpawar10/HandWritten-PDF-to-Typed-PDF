@@ -7,11 +7,11 @@ import { handleChunkedOcr } from '../controllers/chunkedOcrController.js';
 
 const router = express.Router();
 
-// Apply authentication to all API routes
-router.use(requireAuth);
-
 // Apply general rate limiting
 router.use(rateLimiter);
+
+// Apply authentication to all API routes
+router.use(requireAuth);
 
 // OCR endpoints with stricter rate limiting
 router.post('/ocr', ocrRateLimiter, handleOcr);

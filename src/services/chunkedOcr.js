@@ -87,33 +87,104 @@ export async function convertToFormattedDocumentChunked(file, onProgress) {
       signal: controller.signal
     });
 
-    clearTimeout(timeoutId);
-
-    const data = await res.json();
-
     if (!res.ok) {
-      const errorMsg = data?.error || data?.message || `HTTP ${res.status}`;
+      clearTimeout(timeoutId);
+      let errorMsg = `HTTP ${res.status}`;
+      try {
+        const text = await res.text();
+        try {
+          const json = JSON.parse(text);
+          errorMsg = json.error || json.message || errorMsg;
+        } catch {
+          if (text && text.trim().length > 0 && text.length < 300) {
+            errorMsg = text.trim();
+          }
+        }
+      } catch {
+        // ignore read error
+      }
       throw new Error(errorMsg);
     }
 
-    if (!data.text || data.text.trim().length === 0) {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          let event = null;
+          try {
+            event = JSON.parse(line.slice(6));
+          } catch {
+            // Skip malformed JSON lines
+            continue;
+          }
+
+          if (event.type === 'progress' && onProgress) {
+            onProgress({
+              current: event.current_page ?? event.current ?? 0,
+              total: event.total_pages ?? event.total ?? 0,
+              percent: event.percent ?? Math.round(((event.current_page || 0) / (event.total_pages || 1)) * 100),
+              message: event.message || `Processing page ${event.current_page || 0} of ${event.total_pages || 0}...`
+            });
+          } else if (event.type === 'result') {
+            finalResult = event;
+          } else if (event.type === 'error') {
+            throw new Error(event.error || 'OCR processing failed');
+          }
+        }
+      }
+    }
+
+    clearTimeout(timeoutId);
+
+    if (buffer.trim().startsWith('data: ')) {
+      let event = null;
+      try {
+        event = JSON.parse(buffer.trim().slice(6));
+      } catch {
+        // Skip malformed JSON lines
+      }
+      if (event) {
+        if (event.type === 'result') {
+          finalResult = event;
+        } else if (event.type === 'error') {
+          throw new Error(event.error || 'OCR processing failed');
+        }
+      }
+    }
+
+    if (!finalResult) {
+      throw new Error('No result received from OCR processing');
+    }
+
+    if (!finalResult.text || finalResult.text.trim().length === 0) {
       throw new Error("No text could be extracted from the document.");
     }
 
     // Final progress update
     onProgress?.({
-      current: data.pages_processed || data.total_pages,
-      total: data.total_pages,
+      current: finalResult.pages_processed || finalResult.total_pages || 0,
+      total: finalResult.total_pages || 0,
       percent: 100,
       message: "Processing complete!"
     });
 
     return {
-      text: data.text,
-      formattedPdf: data.formatted_pdf,
-      formattedDocx: data.formatted_docx,
-      totalPages: data.total_pages,
-      pagesProcessed: data.pages_processed
+      text: finalResult.text,
+      formattedPdf: finalResult.formatted_pdf || finalResult.formattedPdf,
+      formattedDocx: finalResult.formatted_docx || finalResult.formattedDocx,
+      totalPages: finalResult.total_pages || finalResult.totalPages,
+      pagesProcessed: finalResult.pages_processed || finalResult.pagesProcessed
     };
 
   } catch (error) {

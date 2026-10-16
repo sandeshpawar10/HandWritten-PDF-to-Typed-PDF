@@ -28,7 +28,7 @@ export const rateLimiter = rateLimit({
     res.status(429).json({
       error: 'Rate limit exceeded',
       message: 'Too many requests. Please slow down.',
-      retryAfter: Math.ceil(req.rateLimit.resetTime / 1000)
+      retryAfter: Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000)
     });
   }
 });
@@ -52,7 +52,7 @@ export const ocrRateLimiter = rateLimit({
     res.status(429).json({
       error: 'OCR rate limit exceeded',
       message: 'You have exceeded the OCR processing limit. Please wait before trying again.',
-      retryAfter: Math.ceil(req.rateLimit.resetTime / 1000),
+      retryAfter: Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000),
       limit: 5,
       window: '5 minutes'
     });

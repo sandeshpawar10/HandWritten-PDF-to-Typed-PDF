@@ -62,8 +62,11 @@ export const runPaddleOCR = async (body) => {
 
     // Spawn Python process with timeout
     const python = spawn(pythonCmd, [pythonScript], {
-      timeout: 300000, // 5 minutes (increased for PDF processing)
-      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for large responses
+      timeout: 300000 // 5 minutes (increased for PDF processing)
+    });
+
+    python.stdin.on('error', (err) => {
+      console.error('Python stdin error (handled):', err.message);
     });
 
     let stdout = '';
@@ -232,30 +235,4 @@ export const runPaddleOCR = async (body) => {
       });
     }
   });
-};
-
-/**
- * Process multi-page PDF using PaddleOCR
- * @param {Array} pages - Array of base64 encoded page images
- * @returns {Object} Combined OCR results
- */
-export const runPaddleOCRMultiPage = async (pages) => {
-  const results = [];
-
-  for (let i = 0; i < pages.length; i++) {
-    const pageResult = await runPaddleOCR({
-      document: {
-        image_url: pages[i]
-      }
-    });
-
-    results.push({
-      page: i + 1,
-      ...pageResult.pages[0]
-    });
-  }
-
-  return {
-    pages: results
-  };
 };

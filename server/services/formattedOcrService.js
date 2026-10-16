@@ -57,8 +57,11 @@ export const runFormattedOCR = async (body) => {
     });
 
     const python = spawn(pythonCmd, [pythonScript], {
-      timeout: 300000, // 5 minutes
-      maxBuffer: 100 * 1024 * 1024 // 100MB buffer for formatted outputs
+      timeout: 300000 // 5 minutes
+    });
+
+    python.stdin.on('error', (err) => {
+      console.error('Python stdin error (handled):', err.message);
     });
 
     let stdout = '';

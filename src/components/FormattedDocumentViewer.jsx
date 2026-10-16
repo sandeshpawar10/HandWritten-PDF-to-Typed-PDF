@@ -1,20 +1,35 @@
-import React, { useState } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { FileText, Download, Eye, X } from 'lucide-react';
 import { downloadBase64File } from '../services/formattedOcr';
+import { toast } from './Toast';
 
 /**
  * PDF Viewer Component
  * Displays formatted PDF with download options for PDF and DOCX
  */
 export function FormattedDocumentViewer({ formattedPdf, formattedDocx, filename, onClose }) {
-  const [viewMode, setViewMode] = useState('preview'); // 'preview' or 'fullscreen'
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
 
   const handleDownloadPdf = () => {
+    if (!formattedPdf) {
+      toast.error('PDF not available');
+      return;
+    }
     const name = filename ? filename.replace(/\.[^/.]+$/, '') + '_formatted.pdf' : 'document_formatted.pdf';
     downloadBase64File(formattedPdf, name, 'application/pdf');
   };
 
   const handleDownloadDocx = () => {
+    if (!formattedDocx) {
+      toast.error('DOCX not available');
+      return;
+    }
     const name = filename ? filename.replace(/\.[^/.]+$/, '') + '_formatted.docx' : 'document_formatted.docx';
     downloadBase64File(formattedDocx, name, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   };
@@ -46,8 +61,8 @@ export function FormattedDocumentViewer({ formattedPdf, formattedDocx, filename,
   }, [pdfUrl]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className="flex items-center gap-3">

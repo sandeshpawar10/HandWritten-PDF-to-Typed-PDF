@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import apiRoutes from './routes/apiRoutes.js';
 
 const app = express();
+app.set('trust proxy', 1);
 const port = process.env.PORT || 3001;
 
 // Validate environment on startup
@@ -111,10 +112,7 @@ app.get('/health', (req, res) => {
 app.use('/api/v1', apiRoutes);
 
 // Backward compatibility - redirect /api to /api/v1
-app.use('/api', (req, res, next) => {
-  req.url = '/v1' + req.url;
-  next();
-}, apiRoutes);
+app.use('/api', apiRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -123,6 +121,8 @@ app.use((req, res) => {
     message: `Route ${req.method} ${req.path} not found`,
     availableRoutes: [
       'POST /api/v1/ocr',
+      'POST /api/v1/ocr/formatted',
+      'POST /api/v1/ocr/chunked',
       'GET /health'
     ]
   });

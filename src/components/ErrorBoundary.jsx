@@ -98,7 +98,7 @@ export class ErrorBoundary extends React.Component {
               </p>
             </div>
 
-            {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
+            {import.meta.env.DEV && this.state.errorInfo && (
               <details className="mb-6 p-4 bg-gray-50 rounded-xl">
                 <summary className="cursor-pointer text-sm font-medium text-gray-700 mb-2">
                   Stack Trace (Development Only)

@@ -2,7 +2,7 @@
  * Toast Notification System
  * Replaces browser alert() with professional toast notifications
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { X, CheckCircle2, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -22,7 +22,7 @@ const toastStore = {
   },
 
   add(toast) {
-    const id = Math.random().toString(36).substr(2, 9);
+    const id = Math.random().toString(36).substring(2, 11);
     const newToast = { id, ...toast, createdAt: Date.now() };
     this.toasts = [...this.toasts, newToast];
     this.notify();
@@ -67,7 +67,7 @@ export function ToastContainer() {
   }, []);
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] pointer-events-none">
+    <div className="fixed top-4 right-4 z-[9999] pointer-events-none" aria-live="polite" role="status">
       <AnimatePresence>
         {toasts.map(toast => (
           <Toast key={toast.id} toast={toast} onDismiss={() => toastStore.remove(toast.id)} />

@@ -6,10 +6,11 @@ import { cn } from '../lib/utils';
 import { exportToPdf } from '../services/export';
 import { toast } from './Toast';
 import { ChunkedProgressBar } from './ChunkedProgressBar';
+import { downloadBase64File } from '../services/chunkedOcr';
 
 // File size limits - prevent backend OOM
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-const MAX_FILE_SIZE_MB = 20;
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+const MAX_FILE_SIZE_MB = 25;
 
 function getFileIcon(fileName) {
   const ext = fileName.split('.').pop()?.toLowerCase();
@@ -238,7 +239,7 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
                       <p className="text-sm font-bold text-[#3D2E1C] truncate mb-1">{job.file.name}</p>
 
                       {/* Show progress bar if this job is processing and has progress data */}
-                      {job.status === 'converting' && processingProgress?.jobId === job.id && processingProgress.total > 0 ? (
+                      {job.status === 'converting' && processingProgress?.jobId === job.id ? (
                         <div className="mt-2">
                           <ChunkedProgressBar progress={processingProgress} />
                         </div>
@@ -248,9 +249,9 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
                             <div className="w-1 h-1 rounded-full bg-[#8C7B6B]" />
                             {(job.file.size / 1024 / 1024).toFixed(2)} MB
                           </span>
-                          {job.status === 'converting' && job.error && (
-                            <span className="text-[10px] font-medium text-[#8B5E3C] px-2 py-0.5 rounded-lg bg-amber-50">
-                              {job.error}
+                          {job.status === 'converting' && job.progressMessage && (
+                            <span className="text-[10px] font-medium text-blue-700 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-100">
+                              {job.progressMessage}
                             </span>
                           )}
                           {job.status === 'failed' && (
@@ -277,11 +278,17 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
                         {cfg.label}
                       </div>
 
-                      {job.status === 'completed' && job.content && (
+                      {job.status === 'completed' && (job.formattedPdf || job.content) && (
                         <motion.button
                           whileHover={{ scale: 1.1 }}
                           whileTap={{ scale: 0.9 }}
-                          onClick={() => exportToPdf(job.file.name.replace(/\.[^/.]+$/, ''), job.content)}
+                          onClick={() => {
+                            if (job.formattedPdf) {
+                              downloadBase64File(job.formattedPdf, `${job.file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'application/pdf');
+                            } else {
+                              exportToPdf(job.file.name.replace(/\.[^/.]+$/, ''), job.content);
+                            }
+                          }}
                           className="p-2.5 rounded-xl bg-white/80 border border-[#E8DFD0] hover:bg-[#8B5E3C]/10 hover:border-[#8B5E3C]/30 hover:text-[#8B5E3C] text-[#8C7B6B] transition-all shadow-sm hover:shadow-md magnetic"
                         >
                           <Download className="w-4 h-4" />
@@ -292,7 +299,10 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
                         <motion.button
                           whileHover={{ scale: 1.1, rotate: 180 }}
                           whileTap={{ scale: 0.9 }}
-                          onClick={() => onFilesAdded([job.file])}
+                          onClick={() => {
+                            onRemoveJob(job.id);
+                            onFilesAdded([job.file]);
+                          }}
                           className="p-2.5 rounded-xl bg-white/80 border border-[#E8DFD0] hover:bg-[#C4853C]/10 hover:border-[#C4853C]/30 hover:text-[#C4853C] text-[#8C7B6B] transition-all shadow-sm hover:shadow-md"
                         >
                           <RotateCw className="w-4 h-4" />

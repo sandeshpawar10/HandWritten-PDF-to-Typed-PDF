@@ -200,8 +200,9 @@ export const exportToDocx = async (title, content) => {
 
       case 'table':
         if (block.rows && block.rows.length > 0) {
-          const tableRows = block.rows.map((row, rIdx) =>
-            new TableRow({
+          const tableRows = block.rows.map((row, rIdx) => {
+            const colWidth = row.length > 0 ? Math.floor(9000 / row.length) : 9000;
+            return new TableRow({
               children: row.map(cell =>
                 new TableCell({
                   children: [new Paragraph({
@@ -212,12 +213,12 @@ export const exportToDocx = async (title, content) => {
                     })],
                   })],
                   borders: cellBorders,
-                  width: { size: Math.floor(9000 / row.length), type: WidthType.DXA },
+                  width: { size: colWidth, type: WidthType.DXA },
                   shading: rIdx === 0 ? { fill: 'E8EDF5' } : undefined,
                 })
               ),
-            })
-          );
+            });
+          });
           children.push(new Table({ rows: tableRows, width: { size: 9000, type: WidthType.DXA } }));
           children.push(new Paragraph({ text: '', spacing: { after: 120 } }));
         }
@@ -299,15 +300,76 @@ export const exportToDocx = async (title, content) => {
 }
 
 export async function exportToPdf(title, content) {
-  // Find the dedicated print container
-  const printEl = document.getElementById('pdf-export-content');
-  if (!printEl) {
-    throw new Error('The document preview is not ready for PDF export.');
+  // Find the dedicated print container, or generate from content as fallback
+  let printEl = document.getElementById('pdf-export-content');
+  let clone;
+
+  if (printEl) {
+    clone = printEl.cloneNode(true);
+  } else if (content) {
+    clone = document.createElement('div');
+    const blocks = parseMarkdownBlocks(content);
+    for (const block of blocks) {
+      if (block.type === 'heading') {
+        const h = document.createElement(`h${block.level || 1}`);
+        h.className = `md-h${block.level || 1}`;
+        h.textContent = block.text || '';
+        clone.appendChild(h);
+      } else if (block.type === 'paragraph') {
+        const p = document.createElement('p');
+        p.className = 'md-paragraph';
+        p.textContent = block.text || '';
+        clone.appendChild(p);
+      } else if (block.type === 'code') {
+        const pre = document.createElement('pre');
+        pre.className = 'md-code-block';
+        pre.textContent = (block.lines || []).join('\n');
+        clone.appendChild(pre);
+      } else if (block.type === 'math') {
+        const div = document.createElement('div');
+        div.className = 'md-math-block';
+        div.textContent = (block.lines || []).join('\n');
+        clone.appendChild(div);
+      } else if (block.type === 'blockquote') {
+        const bq = document.createElement('blockquote');
+        bq.className = 'md-blockquote';
+        bq.textContent = block.text || '';
+        clone.appendChild(bq);
+      } else if (block.type === 'list-item') {
+        const li = document.createElement('li');
+        li.textContent = block.text || '';
+        clone.appendChild(li);
+      } else if (block.type === 'hr') {
+        const hr = document.createElement('hr');
+        hr.className = 'md-hr';
+        clone.appendChild(hr);
+      } else if (block.type === 'separator') {
+        const sep = document.createElement('div');
+        sep.className = 'md-page-separator';
+        clone.appendChild(sep);
+      } else if (block.type === 'table') {
+        if (block.rows && block.rows.length > 0) {
+          const tbl = document.createElement('table');
+          tbl.className = 'md-table';
+          block.rows.forEach((row, rIdx) => {
+            const tr = document.createElement('tr');
+            row.forEach(cell => {
+              const el = document.createElement(rIdx === 0 ? 'th' : 'td');
+              el.textContent = cell;
+              tr.appendChild(el);
+            });
+            tbl.appendChild(tr);
+          });
+          clone.appendChild(tbl);
+        }
+      }
+    }
+  } else {
+    throw new Error('PDF export failed: Document preview element (#pdf-export-content) not found and no document content was provided.');
   }
 
   // Use the browser's paged PDF engine. Unlike canvas-based export, it can
   // reliably handle large documents with many full-page diagrams.
-  const clone = printEl.cloneNode(true);
   clone.id = 'active-print-container';
   clone.className = 'md-preview'; // Reset classes to avoid Tailwind layout conflicts
   clone.style.display = 'block';

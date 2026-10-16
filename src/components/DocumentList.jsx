@@ -3,23 +3,35 @@ import { FileText, FileImage, ChevronRight, Trash2, Table2, BookOpen } from 'luc
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { deleteDocument } from '../services/documents';
+import { toast } from './Toast';
 
 export function DocumentList({ documents, onSelect }) {
   const [sortBy, setSortBy] = useState('date');
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
-    if (confirm('Delete this asset permanently?')) await deleteDocument(id);
+    try {
+      await deleteDocument(id);
+    } catch (err) {
+      console.error('Delete document error:', err);
+      toast.error('Failed to delete document');
+    }
   };
 
   const sorted = [...documents].sort((a, b) => {
-    if (sortBy === 'name') return a.title.localeCompare(b.title);
-    if (sortBy === 'words') {
-      const wA = a.content.trim().split(/\s+/).length;
-      const wB = b.content.trim().split(/\s+/).length;
-      return wB - wA;
+    switch (sortBy) {
+      case 'name':
+        return (a.title || '').localeCompare(b.title || '');
+      case 'words': {
+        const wA = (a.content || '').trim() ? (a.content || '').trim().split(/\s+/).length : 0;
+        const wB = (b.content || '').trim() ? (b.content || '').trim().split(/\s+/).length : 0;
+        return wB - wA;
+      }
+      case 'date':
+        return (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0);
+      default:
+        return 0;
     }
-    return 0;
   });
 
   if (documents.length === 0) {
@@ -78,9 +90,10 @@ export function DocumentList({ documents, onSelect }) {
           const ext = doc.originalFileName?.split('.').pop()?.toLowerCase() || 'doc';
           const isImage = ['png', 'jpg', 'jpeg', 'webp'].includes(ext);
           const TypeIcon = isImage ? FileImage : FileText;
-          const wordCount = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
+          const content = doc.content || '';
+          const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
           const date = doc.updatedAt?.toDate?.();
-          const hasTable = doc.content.includes('|---') || doc.content.includes('| ---');
+          const hasTable = content.includes('|---') || content.includes('| ---');
 
           return (
             <motion.div
@@ -118,7 +131,7 @@ export function DocumentList({ documents, onSelect }) {
                 </h4>
 
                 <p className="text-[13px] text-[#8C7B6B] line-clamp-2 leading-relaxed mb-6 font-medium group-hover:text-[#6B5D4F] transition-colors">
-                  {doc.content.slice(0, 120).replace(/[#*_|`>-]/g, '')}...
+                  {(doc.content || '').slice(0, 120).replace(/[#*_|`>-]/g, '')}...
                 </p>
 
                 <div className="flex items-center justify-between pt-4 border-t border-[#E8DFD0] group-hover:border-[#D4C9B8] transition-colors">

@@ -35,7 +35,10 @@ export const requireAuth = async (req, res, next) => {
     return res.status(401).json({ error: 'Unauthorized: No token provided' });
   }
 
-  const token = authHeader.split('Bearer ')[1];
+  const token = authHeader.slice(7).trim();
+  if (!token) {
+    return res.status(401).json({ error: 'Empty bearer token' });
+  }
   try {
     const decodedToken = await getAuth().verifyIdToken(token);
     req.user = decodedToken; // Make user info available to controllers

@@ -188,7 +188,7 @@ def main():
             # Limit pages to prevent timeout (max 20 pages)
             max_pages = min(page_count, 20)
             if page_count > max_pages:
-                print(f"Note: Processing first {max_pages} of {page_count} pages", file=sys.stderr)
+                print(json.dumps({"type": "warning", "message": f"Processing first {max_pages} of {page_count} pages"}), file=sys.stderr)
 
             for page_num in range(max_pages):
                 page = pdf_document[page_num]
@@ -211,6 +211,9 @@ def main():
 
             # Output JSON result with all pages
             output = {"pages": pages_results}
+            if page_count > max_pages:
+                output["truncated"] = True
+                output["total_actual_pages"] = page_count
 
         else:
             # Handle regular image

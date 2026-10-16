@@ -9,7 +9,7 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "npx rimraf dist",
     "lint": "eslint src server --ext js,jsx --report-unused-disable-directives --max-warnings 200",
     "lint:fix": "eslint src server --ext js,jsx --fix",
     "test": "echo 'Tests to be implemented' && exit 0",

@@ -14,6 +14,7 @@ import {
   FirestoreError
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
+import { toast } from '../components/Toast';
 
 const COLLECTION_NAME = 'documents';
 
@@ -87,7 +88,7 @@ function handleFirestoreError(error, operationType, path = null) {
   throw error;
 }
 
-export function subscribeToDocuments(userId, callback) {
+export function subscribeToDocuments(userId, callback, onError) {
   const q = query(
     collection(db, COLLECTION_NAME),
     where('userId', '==', userId),
@@ -101,11 +102,12 @@ export function subscribeToDocuments(userId, callback) {
     }));
     callback(docs);
   }, (error) => {
-    console.error("Firestore Subscribe Error:", error);
+    console.error("Firestore subscription error:", error);
     try {
       handleFirestoreError(error, 'list', COLLECTION_NAME);
     } catch (e) {
-      // Re-throw or handle as needed for the UI
+      toast.error(e.message || 'Failed to load documents');
+      onError?.(e);
     }
   });
 }
@@ -126,7 +128,6 @@ export async function updateDocument(documentId, updates, saveHistory = true, no
   const docRef = doc(db, COLLECTION_NAME, documentId);
   
   if (saveHistory) {
-    const currentDoc = docRef;
     // We'd ideally want to get current content before updating to save it as a version
     // But for simplicity in this flow, we'll assume the caller might handle versioning if needed
     // or we can implement it here.
@@ -148,7 +149,7 @@ export async function saveVersion(documentId, userId, content, note) {
   });
 }
 
-export function subscribeToVersions(documentId, userId, callback) {
+export function subscribeToVersions(documentId, userId, callback, onError) {
   const q = query(
     collection(db, COLLECTION_NAME, documentId, 'versions'),
     where('userId', '==', userId), // Rule requires this filter for list
@@ -163,15 +164,26 @@ export function subscribeToVersions(documentId, userId, callback) {
     }));
     callback(versions);
   }, (error) => {
-    console.error("Firestore Version Subscribe Error:", error);
+    console.error("Firestore Version subscription error:", error);
     try {
       handleFirestoreError(error, 'list', `${COLLECTION_NAME}/${documentId}/versions`);
     } catch (e) {
-      // Re-throw or handle as needed for the UI
+      toast.error(e.message || 'Failed to load versions');
+      onError?.(e);
     }
   });
 }
 
-export async function deleteDocument(documentId) {
+export const deleteDocument = async (documentId) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not authenticated');
+
+  // Delete versions subcollection first
+  const versionsRef = collection(db, COLLECTION_NAME, documentId, 'versions');
+  const versionsSnapshot = await getDocs(versionsRef);
+  const deletePromises = versionsSnapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
+  await Promise.all(deletePromises);
+
+  // Then delete the document
   return deleteDoc(doc(db, COLLECTION_NAME, documentId));
-}
+};

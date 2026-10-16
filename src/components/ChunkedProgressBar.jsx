@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -6,7 +6,27 @@ import { Loader2 } from 'lucide-react';
  * Shows real-time progress with page count and percentage
  */
 export function ChunkedProgressBar({ progress }) {
-  const { current = 0, total = 0, percent = 0, message = '' } = progress || {};
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (!document.getElementById('shimmer-animation')) {
+      const style = document.createElement('style');
+      style.id = 'shimmer-animation';
+      style.textContent = `
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  const safePercent = Number.isFinite(progress?.percent)
+    ? Math.min(Math.max(Math.round(progress.percent), 0), 100)
+    : 0;
+  const safeCurrent = Number.isFinite(progress?.current) ? progress.current : 0;
+  const safeTotal = Number.isFinite(progress?.total) ? progress.total : 0;
+  const message = progress?.message || '';
 
   return (
     <div className="w-full space-y-3">
@@ -14,17 +34,17 @@ export function ChunkedProgressBar({ progress }) {
       <div className="relative w-full bg-gray-200 rounded-full h-6 overflow-hidden shadow-inner">
         <div
           className="absolute inset-0 bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out flex items-center justify-center"
-          style={{ width: `${Math.min(percent, 100)}%` }}
+          style={{ width: `${safePercent}%` }}
         >
-          {percent > 10 && (
+          {safePercent > 10 && (
             <span className="text-xs font-bold text-white z-10">
-              {percent}%
+              {safePercent}%
             </span>
           )}
         </div>
 
         {/* Animated stripes effect */}
-        {percent < 100 && (
+        {safePercent < 100 && (
           <div
             className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"
             style={{
@@ -38,12 +58,12 @@ export function ChunkedProgressBar({ progress }) {
       {/* Status Text */}
       <div className="flex items-center justify-between text-sm">
         <div className="flex items-center gap-2">
-          {percent < 100 ? (
+          {safePercent < 100 ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
               <span className="font-medium text-gray-700">
-                {total > 0 ? (
-                  <>Processing page <span className="text-blue-600 font-bold">{current}</span> of {total}</>
+                {safeTotal > 0 ? (
+                  <>Processing page <span className="text-blue-600 font-bold">{safeCurrent}</span> of {safeTotal}</>
                 ) : (
                   'Initializing...'
                 )}
@@ -54,9 +74,9 @@ export function ChunkedProgressBar({ progress }) {
           )}
         </div>
 
-        {total > 0 && (
+        {safeTotal > 0 && (
           <span className="text-xs text-gray-500 font-mono">
-            {current}/{total} pages
+            {safeCurrent}/{safeTotal} pages
           </span>
         )}
       </div>
@@ -69,20 +89,4 @@ export function ChunkedProgressBar({ progress }) {
       )}
     </div>
   );
-}
-
-// Add shimmer animation to your global CSS or inline
-const shimmerStyle = `
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-`;
-
-// Inject shimmer animation if not already present
-if (typeof document !== 'undefined' && !document.getElementById('shimmer-animation')) {
-  const style = document.createElement('style');
-  style.id = 'shimmer-animation';
-  style.textContent = shimmerStyle;
-  document.head.appendChild(style);
 }

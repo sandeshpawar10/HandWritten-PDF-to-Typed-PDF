@@ -253,7 +253,7 @@ body {
   @apply my-5 p-4 rounded-xl border overflow-x-auto text-sm leading-relaxed;
   background: #f8f6f2;
   border-color: var(--color-border);
-  font-family: "Courier New", Courier, monospace;
+  font-family: var(--font-mono), "Fira Code", monospace;
   white-space: pre;
 }
 

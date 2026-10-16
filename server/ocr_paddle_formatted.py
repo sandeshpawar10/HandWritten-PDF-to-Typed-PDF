@@ -99,6 +99,22 @@ def detect_text_structure(lines_data):
 
     return structured_content
 
+def escape_reportlab_text(text):
+    """
+    Escape XML special characters and handle non-ASCII characters safely for ReportLab
+    """
+    if not text:
+        return ""
+    # Escape XML entities
+    text = (
+        text.replace('&', '&amp;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+        .replace('"', '&quot;')
+    )
+    # Handle non-ASCII characters safely using XML numeric character references
+    return text.encode('ascii', 'xmlcharrefreplace').decode('ascii')
+
 def create_formatted_pdf(structured_content, images_data=None):
     """
     Create a beautifully formatted PDF using ReportLab
@@ -206,12 +222,34 @@ def create_formatted_pdf(structured_content, images_data=None):
     story = []
     first_heading = True
 
-    for item in structured_content:
-        text = item['text']
-        text_type = item['type']
+    # Normalize input: if structured_content is a list of pages (lists), flatten with page breaks
+    flat_content = []
+    if structured_content and isinstance(structured_content[0], list):
+        for idx, page_items in enumerate(structured_content):
+            if idx > 0:
+                flat_content.append({'type': 'page_break', 'text': ''})
+            flat_content.extend(page_items)
+    else:
+        flat_content = structured_content
 
-        # Escape special characters for ReportLab
-        text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    for item in flat_content:
+        text_type = item.get('type')
+
+        # Add page breaks between pages
+        if text_type == 'page_break':
+            story.append(PageBreak())
+            continue
+
+        text = item.get('text', '')
+        if not text:
+            continue
+
+        if text_type == 'bullet':
+            # Clean bullet point
+            text = re.sub(r'^[•\-*·]\s*', '', text)
+
+        # Escape special characters and handle non-ASCII safely for ReportLab
+        text = escape_reportlab_text(text)
 
         if text_type == 'heading':
             if first_heading:
@@ -225,9 +263,7 @@ def create_formatted_pdf(structured_content, images_data=None):
             story.append(Paragraph(text, subheading_style))
 
         elif text_type == 'bullet':
-            # Clean bullet point
-            text = re.sub(r'^[•\-*·]\s*', '', text)
-            story.append(Paragraph(f'• {text}', bullet_style))
+            story.append(Paragraph(f'&bull; {text}', bullet_style))
 
         elif text_type == 'code':
             story.append(Paragraph(text, code_style))
@@ -270,9 +306,27 @@ def create_formatted_docx(structured_content, images_data=None):
 
     first_heading = True
 
-    for item in structured_content:
-        text = item['text']
-        text_type = item['type']
+    # Normalize input: if structured_content is a list of pages (lists), flatten with page breaks
+    flat_content = []
+    if structured_content and isinstance(structured_content[0], list):
+        for idx, page_items in enumerate(structured_content):
+            if idx > 0:
+                flat_content.append({'type': 'page_break', 'text': ''})
+            flat_content.extend(page_items)
+    else:
+        flat_content = structured_content
+
+    for item in flat_content:
+        text_type = item.get('type')
+
+        # Add page breaks between pages
+        if text_type == 'page_break':
+            doc.add_page_break()
+            continue
+
+        text = item.get('text', '')
+        if not text:
+            continue
 
         if text_type == 'heading':
             if first_heading:
@@ -287,7 +341,10 @@ def create_formatted_docx(structured_content, images_data=None):
 
         elif text_type == 'bullet':
             text = re.sub(r'^[•\-*·]\s*', '', text)
-            doc.add_paragraph(text, style='List Bullet')
+            try:
+                doc.add_paragraph(text, style='List Bullet')
+            except Exception:
+                doc.add_paragraph(f'• {text}')
 
         elif text_type == 'code':
             p = doc.add_paragraph()
@@ -371,7 +428,12 @@ def main():
 
         if is_pdf:
             pdf_doc = fitz.open(stream=image_bytes, filetype="pdf")
-            max_pages = min(len(pdf_doc), 20)
+            page_count = len(pdf_doc)
+            max_pages = min(page_count, 20)
+            is_truncated = page_count > max_pages
+
+            if is_truncated:
+                print(json.dumps({"type": "warning", "message": f"Processing first {max_pages} of {page_count} pages"}), file=sys.stderr)
 
             for page_num in range(max_pages):
                 page = pdf_doc[page_num]
@@ -380,28 +442,38 @@ def main():
                 image = Image.open(io.BytesIO(img_data))
 
                 structured_content, images = process_document(ocr, image)
+                if page_num > 0:
+                    all_structured_content.append({'type': 'page_break', 'text': ''})
                 all_structured_content.extend(structured_content)
                 all_images.extend(images)
 
             pdf_doc.close()
+            pages_processed = max_pages
         else:
             image = Image.open(io.BytesIO(image_bytes))
             all_structured_content, all_images = process_document(ocr, image)
+            pages_processed = 1
+            is_truncated = False
+            page_count = 1
 
         # Generate formatted outputs
         formatted_pdf = create_formatted_pdf(all_structured_content, all_images)
         formatted_docx = create_formatted_docx(all_structured_content, all_images)
 
         # Generate plain text for compatibility
-        plain_text = '\n'.join([item['text'] for item in all_structured_content])
+        plain_text = '\n'.join([item['text'] for item in all_structured_content if item.get('text')])
 
         output = {
             "text": plain_text,
             "structured_content": all_structured_content,
             "formatted_pdf": formatted_pdf,
             "formatted_docx": formatted_docx,
-            "page_count": len(all_structured_content)
+            "page_count": pages_processed
         }
+
+        if is_truncated:
+            output["truncated"] = True
+            output["total_actual_pages"] = page_count
 
         print(json.dumps(output))
         sys.exit(0)

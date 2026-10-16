@@ -47,6 +47,23 @@ export const runChunkedOCR = async (body, onProgress) => {
   }
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeoutId = null;
+
+    const safeResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      resolve(value);
+    };
+
+    const safeReject = (error) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      reject(error);
+    };
+
     const pythonScript = join(__dirname, '..', 'ocr_paddle_chunked.py');
     const pythonCmd = getPythonCommand();
 
@@ -58,15 +75,20 @@ export const runChunkedOCR = async (body, onProgress) => {
     });
 
     const python = spawn(pythonCmd, [pythonScript], {
-      timeout: 600000, // 10 minutes for large PDFs
-      maxBuffer: 100 * 1024 * 1024 // 100MB buffer
+      timeout: 600000 // 10 minutes for large PDFs
+    });
+
+    // Handle EPIPE errors on stdin
+    python.stdin.on('error', (err) => {
+      console.error('Python stdin error (handled):', err.message);
     });
 
     let stdout = '';
     let stderr = '';
+    let stderrBuffer = '';
     let processTimedOut = false;
 
-    const timeoutId = setTimeout(() => {
+    timeoutId = setTimeout(() => {
       processTimedOut = true;
       python.kill('SIGTERM');
       console.error('Chunked OCR process timed out after 10 minutes');
@@ -79,13 +101,18 @@ export const runChunkedOCR = async (body, onProgress) => {
     python.stderr.on('data', (data) => {
       const chunk = data.toString();
       stderr += chunk;
+      stderrBuffer += chunk;
 
       // Parse progress updates from stderr
-      const lines = chunk.split('\n').filter(line => line.trim());
+      const lines = stderrBuffer.split('\n');
+      stderrBuffer = lines.pop() || '';
 
       for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
         try {
-          const progress = JSON.parse(line);
+          const progress = JSON.parse(trimmed);
 
           if (progress.type === 'progress') {
             // Call progress callback with update
@@ -101,17 +128,15 @@ export const runChunkedOCR = async (body, onProgress) => {
         } catch {
           // Not a JSON progress update, it's probably download progress or other stderr
           // Ignore download progress bars and PaddleOCR initialization messages
-          if (!line.includes('download') && !line.includes('iB/s') && !line.includes('%|')) {
+          if (!trimmed.includes('download') && !trimmed.includes('iB/s') && !trimmed.includes('%|')) {
             // Log non-progress stderr for debugging
-            // console.log('Python stderr:', line);
+            // console.log('Python stderr:', trimmed);
           }
         }
       }
     });
 
     python.on('close', (code) => {
-      clearTimeout(timeoutId);
-
       console.log('Chunked OCR process closed:', {
         code,
         stdoutLength: stdout.length,
@@ -120,7 +145,7 @@ export const runChunkedOCR = async (body, onProgress) => {
       });
 
       if (processTimedOut) {
-        reject({
+        safeReject({
           status: 504,
           data: {
             error: 'Processing timed out after 10 minutes. Please split your document into smaller files.',
@@ -154,7 +179,7 @@ export const runChunkedOCR = async (body, onProgress) => {
         }
 
         if (errorData) {
-          reject({
+          safeReject({
             status: 500,
             data: {
               error: `Processing failed: ${errorData.error || 'Unknown error'}`,
@@ -186,7 +211,7 @@ export const runChunkedOCR = async (body, onProgress) => {
             }
           }
 
-          reject({
+          safeReject({
             status: 500,
             data: {
               error: errorMsg,
@@ -199,7 +224,7 @@ export const runChunkedOCR = async (body, onProgress) => {
 
       try {
         if (!stdout || stdout.trim().length === 0) {
-          reject({
+          safeReject({
             status: 500,
             data: {
               error: 'No output from processing service',
@@ -219,13 +244,13 @@ export const runChunkedOCR = async (body, onProgress) => {
           pagesProcessed: result.pages_processed
         });
 
-        resolve(result);
+        safeResolve(result);
       } catch (error) {
         console.error('Failed to parse chunked OCR output:', {
           error: error.message,
           stdoutPreview: stdout.substring(0, 200)
         });
-        reject({
+        safeReject({
           status: 500,
           data: {
             error: 'Failed to parse processing results.',
@@ -236,7 +261,6 @@ export const runChunkedOCR = async (body, onProgress) => {
     });
 
     python.on('error', (error) => {
-      clearTimeout(timeoutId);
       console.error('Failed to spawn Python process:', {
         error: error.message,
         code: error.code,
@@ -251,7 +275,7 @@ export const runChunkedOCR = async (body, onProgress) => {
         errorMsg = `Failed to start processing service: ${error.message}`;
       }
 
-      reject({
+      safeReject({
         status: 503,
         data: {
           error: errorMsg,
@@ -267,9 +291,8 @@ export const runChunkedOCR = async (body, onProgress) => {
       python.stdin.write(input);
       python.stdin.end();
     } catch (error) {
-      clearTimeout(timeoutId);
       python.kill();
-      reject({
+      safeReject({
         status: 500,
         data: {
           error: `Failed to send data to processing service: ${error.message}`,
