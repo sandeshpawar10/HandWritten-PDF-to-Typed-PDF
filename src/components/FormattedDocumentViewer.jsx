@@ -136,7 +136,7 @@ export function FormattedDocumentViewer({ formattedPdf, formattedDocx, filename,
               </span>
             </div>
             <div className="text-xs text-gray-500">
-              Auto-formatted by PaddleOCR
+              Auto-formatted by Gemini AI
             </div>
           </div>
         </div>

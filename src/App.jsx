@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut } from './lib/firebase';
 import { subscribeToDocuments, createDocument, subscribeToVersions } from './services/documents';
-import { convertToFormattedDocumentChunked } from './services/chunkedOcr';
+import { convertWithFallback } from './services/chunkedOcr';
 import { FileUpload } from './components/FileUpload';
 import { DocumentList } from './components/DocumentList';
 import { Editor } from './components/Editor';
@@ -83,8 +83,8 @@ export default function App() {
 
       setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'converting' } : j));
       try {
-        // Use chunked OCR service for unlimited pages
-        const result = await convertToFormattedDocumentChunked(job.file, (progress) => {
+        // Use chunked OCR service with automatic client-side fallback
+        const result = await convertWithFallback(job.file, (progress) => {
           // Update progress state
           setProcessingProgress({
             jobId: job.id,
@@ -130,8 +130,9 @@ export default function App() {
         }
 
         // Success notification with page count
+        const method = result.clientSide ? '(browser-based OCR)' : '';
         toast.success(
-          `✨ Document formatted successfully! (${result.pagesProcessed} pages processed)`
+          `✨ Document formatted successfully! (${result.pagesProcessed} pages processed) ${method}`
         );
 
       } catch (err) {

@@ -1,8 +1,10 @@
 /**
  * Chunked OCR Service - Handles unlimited pages with progress tracking
+ * Falls back to client-side Tesseract.js OCR if server is unavailable
  */
 
 import { auth } from '../lib/firebase.js';
+import { clientSideOcr } from './clientOcr.js';
 
 // API Configuration
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD
@@ -120,6 +122,8 @@ export async function convertToFormattedDocumentChunked(file, onProgress) {
       buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
       for (const line of lines) {
+        // Skip SSE comments (heartbeats)
+        if (line.startsWith(':')) continue;
         if (line.startsWith('data: ')) {
           let event = null;
           try {
@@ -147,18 +151,22 @@ export async function convertToFormattedDocumentChunked(file, onProgress) {
 
     clearTimeout(timeoutId);
 
-    if (buffer.trim().startsWith('data: ')) {
-      let event = null;
-      try {
-        event = JSON.parse(buffer.trim().slice(6));
-      } catch {
-        // Skip malformed JSON lines
-      }
-      if (event) {
-        if (event.type === 'result') {
-          finalResult = event;
-        } else if (event.type === 'error') {
-          throw new Error(event.error || 'OCR processing failed');
+    // Process any remaining data in the buffer
+    const remainingLines = buffer.split('\n');
+    for (const line of remainingLines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith(':')) continue; // Skip heartbeat comments
+      if (trimmed.startsWith('data: ')) {
+        try {
+          const event = JSON.parse(trimmed.slice(6));
+          if (event.type === 'result') {
+            finalResult = event;
+          } else if (event.type === 'error') {
+            throw new Error(event.error || 'OCR processing failed');
+          }
+        } catch (e) {
+          if (e.message && !e.message.includes('JSON')) throw e;
+          // Skip malformed JSON
         }
       }
     }
@@ -227,3 +235,72 @@ export function downloadBase64File(base64Data, filename, mimeType) {
   document.body.removeChild(link);
   URL.revokeObjectURL(link.href);
 }
+
+/**
+ * Errors that should trigger client-side fallback
+ * (server unavailable, OOM, timeout — not auth or validation errors)
+ */
+function shouldFallbackToClient(error) {
+  const msg = (error?.message || '').toLowerCase();
+  return (
+    msg.includes('no result received') ||
+    msg.includes('out of memory') ||
+    msg.includes('timed out') ||
+    msg.includes('timeout') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network') ||
+    msg.includes('unavailable') ||
+    msg.includes('503') ||
+    msg.includes('504') ||
+    msg.includes('oom') ||
+    msg.includes('aborted') ||
+    error?.name === 'AbortError' ||
+    error?.name === 'TypeError' // fetch network errors
+  );
+}
+
+/**
+ * Convert document with automatic fallback to client-side OCR
+ * Tries server-side chunked OCR first. If it fails due to server issues
+ * (OOM, timeout, crash), automatically falls back to Tesseract.js in the browser.
+ *
+ * @param {File} file - Image or PDF file
+ * @param {Function} onProgress - Progress callback
+ * @returns {Object} { text, formattedPdf, formattedDocx, totalPages, pagesProcessed, clientSide? }
+ */
+export async function convertWithFallback(file, onProgress) {
+  try {
+    // Try server-side first
+    return await convertToFormattedDocumentChunked(file, onProgress);
+  } catch (serverError) {
+    console.warn('Server OCR failed, checking if fallback is appropriate:', serverError.message);
+
+    if (!shouldFallbackToClient(serverError)) {
+      // Auth errors, file too large, rate limits — don't fallback
+      throw serverError;
+    }
+
+    // Notify user about fallback
+    console.log('Falling back to client-side OCR (Tesseract.js)...');
+    onProgress?.({
+      current: 0,
+      total: 0,
+      percent: 0,
+      message: `⚡ Server unavailable — switching to browser-based OCR. This uses your device's processing power.`
+    });
+
+    try {
+      const result = await clientSideOcr(file, onProgress);
+      return result;
+    } catch (clientError) {
+      console.error('Client-side OCR also failed:', clientError);
+      // Throw the original server error with context about both failures
+      throw new Error(
+        `Server OCR failed (${serverError.message}). ` +
+        `Client-side fallback also failed (${clientError.message}). ` +
+        `Please try again later or with a smaller file.`
+      );
+    }
+  }
+}
+

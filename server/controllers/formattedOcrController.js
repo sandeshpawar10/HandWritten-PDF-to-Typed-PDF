@@ -1,16 +1,16 @@
-import { runFormattedOCR } from '../services/formattedOcrService.js';
+import { runGeminiOCR } from '../services/geminiOcrService.js';
 
 export const handleFormattedOcr = async (req, res) => {
   try {
-    console.log('Formatted OCR request received:', {
+    console.log('Gemini Formatted OCR request received:', {
       hasDocument: !!req.body?.document,
       documentType: req.body?.document?.type,
       userId: req.user?.uid
     });
 
-    const data = await runFormattedOCR(req.body);
+    const data = await runGeminiOCR(req.body);
 
-    console.log('Formatted OCR processing successful:', {
+    console.log('Gemini Formatted OCR processing successful:', {
       textLength: data.text?.length,
       hasPdf: !!data.formatted_pdf,
       hasDocx: !!data.formatted_docx,

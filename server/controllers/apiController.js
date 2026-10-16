@@ -1,17 +1,17 @@
-import { runPaddleOCR } from '../services/paddleOcrService.js';
+import { runGeminiOCR } from '../services/geminiOcrService.js';
 
 export const handleOcr = async (req, res) => {
   try {
-    console.log('OCR request received:', {
+    console.log('Gemini OCR request received:', {
       hasDocument: !!req.body?.document,
       documentType: req.body?.document?.type,
       userId: req.user?.uid
     });
 
-    const data = await runPaddleOCR(req.body);
+    const data = await runGeminiOCR(req.body);
 
-    console.log('OCR processing successful:', {
-      pages: data.pages?.length,
+    console.log('Gemini OCR processing successful:', {
+      totalPages: data.total_pages,
       userId: req.user?.uid
     });
 

@@ -87,6 +87,11 @@ app.use(compression({
     if (req.headers['x-no-compression']) {
       return false;
     }
+    // Don't compress SSE streams - compression buffers responses
+    // and breaks real-time event delivery for chunked OCR
+    if (req.path.includes('/ocr/chunked')) {
+      return false;
+    }
     return compression.filter(req, res);
   },
   level: 6 // Balance between compression ratio and CPU usage
@@ -144,7 +149,7 @@ const server = app.listen(port, () => {
   console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`✓ API Version: v1`);
   console.log(`✓ Health check: http://localhost:${port}/health`);
-  console.log(`✓ PaddleOCR: Local processing (no external API required)`);
+  console.log(`✓ Gemini Flash OCR: Cloud multimodal processing enabled`);
 });
 
 // Graceful shutdown handler

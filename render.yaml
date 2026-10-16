@@ -11,14 +11,8 @@ services:
         value: production
       - key: PORT
         value: 3001
-      - key: PYTHON_VERSION
-        value: "3.11"
-      - key: PIP_NO_CACHE_DIR
-        value: "1"
-      - key: FLAGS_allocator_strategy
-        value: naive_best_fit
-      - key: OMP_NUM_THREADS
-        value: "1"
-      - key: MKL_NUM_THREADS
-        value: "1"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
     healthCheckPath: /health
