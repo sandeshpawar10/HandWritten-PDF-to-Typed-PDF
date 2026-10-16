@@ -101,7 +101,9 @@ export const runChunkedOCR = async (body, onProgress) => {
     python.stderr.on('data', (data) => {
       const chunk = data.toString();
       stderr += chunk;
-      stderrBuffer += chunk;
+      // Strip carriage-return sequences from tqdm/download progress bars
+      // so they don't corrupt JSON line parsing
+      stderrBuffer += chunk.replace(/\r[^\n]/g, '');
 
       // Parse progress updates from stderr
       const lines = stderrBuffer.split('\n');

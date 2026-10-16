@@ -8,6 +8,8 @@ import json
 import base64
 import io
 import re
+import traceback
+import numpy as np
 from paddleocr import PaddleOCR
 from PIL import Image
 import fitz  # PyMuPDF
@@ -385,6 +387,9 @@ def create_formatted_docx(structured_content, images_data=None):
 
 def process_document(ocr, image, extract_images=True):
     """Process document and return structured data with formatting"""
+    # PaddleOCR requires np.ndarray, not PIL.Image
+    if isinstance(image, Image.Image):
+        image = np.array(image.convert('RGB'))
     result = ocr.ocr(image, cls=True)
 
     lines_data = []
@@ -479,9 +484,14 @@ def main():
         sys.exit(0)
 
     except Exception as e:
+        tb = traceback.format_exc()
+        error_msg = str(e)
+        if not error_msg:
+            error_msg = f"{type(e).__name__}: {tb.strip().splitlines()[-1]}"
         error_output = {
-            "error": str(e),
-            "type": type(e).__name__
+            "error": error_msg,
+            "type": type(e).__name__,
+            "traceback": tb
         }
         print(json.dumps(error_output), file=sys.stderr)
         sys.exit(1)
