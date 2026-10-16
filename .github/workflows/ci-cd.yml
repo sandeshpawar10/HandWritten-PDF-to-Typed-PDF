@@ -96,33 +96,7 @@ jobs:
         run: npm audit --audit-level=critical || true
         continue-on-error: true
 
-  # Job 5: Deploy to Staging (on develop branch)
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: [build, test]
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-    environment:
-      name: staging
-      url: https://staging-typeddoc.web.app
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Deploy to Firebase Hosting (Staging)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_STAGING }}'
-          projectId: your-staging-project-id
-          channelId: staging
-
-  # Job 6: Deploy to Production (on main branch)
+  # Job 5: Deploy to Production (on main branch)
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -144,11 +118,11 @@ jobs:
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_AI_STUDIO_APPLET_WEBAPP_A82B5 }}'
           projectId: ai-studio-applet-webapp-a82b5
           channelId: live
 
-  # Job 7: Create Release (on version tags)
+  # Job 6: Create Release (on version tags)
   release:
     name: Create Release
     runs-on: ubuntu-latest
