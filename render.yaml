@@ -4,7 +4,7 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm install && pip3 install -r requirements.txt
+    buildCommand: bash build.sh
     startCommand: npm run server
     envVars:
       - key: NODE_ENV
@@ -12,5 +12,7 @@ services:
       - key: PORT
         value: 3001
       - key: PYTHON_VERSION
-        value: 3.11
+        value: "3.11"
+      - key: PIP_NO_CACHE_DIR
+        value: "1"
     healthCheckPath: /health
