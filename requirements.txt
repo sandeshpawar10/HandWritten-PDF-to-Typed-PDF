@@ -1,0 +1,2 @@
+# Pure Node.js service - No Python dependencies required.
+# Processing is handled by Node.js and Google Gemini Flash API.
