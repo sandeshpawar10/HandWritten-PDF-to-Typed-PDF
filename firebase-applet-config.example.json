@@ -1,0 +1,13 @@
+# Firebase Configuration Template
+# Copy this file to firebase-applet-config.json and add your actual Firebase project credentials
+# IMPORTANT: Never commit the actual config file with real credentials to Git!
+
+{
+  "projectId": "your-firebase-project-id",
+  "appId": "your-app-id",
+  "apiKey": "your-firebase-api-key",
+  "authDomain": "your-project.firebaseapp.com",
+  "firestoreDatabaseId": "your-firestore-database-id",
+  "storageBucket": "your-project.firebasestorage.app",
+  "messagingSenderId": "your-messaging-sender-id"
+}

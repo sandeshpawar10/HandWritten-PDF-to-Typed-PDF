@@ -1,12 +1,13 @@
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  query, 
-  where, 
-  orderBy, 
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  where,
+  orderBy,
+  limit,
   onSnapshot,
   serverTimestamp,
   getDocs,
@@ -151,7 +152,8 @@ export function subscribeToVersions(documentId, userId, callback) {
   const q = query(
     collection(db, COLLECTION_NAME, documentId, 'versions'),
     where('userId', '==', userId), // Rule requires this filter for list
-    orderBy('createdAt', 'desc')
+    orderBy('createdAt', 'desc'),
+    limit(10) // Only load latest 10 versions to prevent memory issues
   );
 
   return onSnapshot(q, (snapshot) => {

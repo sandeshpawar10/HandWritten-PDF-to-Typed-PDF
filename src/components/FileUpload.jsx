@@ -4,6 +4,7 @@ import { Upload, FileImage, FileText, Loader2, X, Download, AlertCircle, CheckCi
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { exportToPdf } from '../services/export';
+import { toast } from './Toast';
 
 // File size limits - prevent backend OOM
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
@@ -42,8 +43,9 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob }) {
 
     // Show errors to user
     if (errors.length > 0) {
-      const errorMessages = errors.map(e => `${e.file}: ${e.error}`).join('\n');
-      alert(errorMessages);
+      errors.forEach(e => {
+        toast.error(`${e.file}: ${e.error}`, { duration: 7000 });
+      });
     }
 
     // Process valid files
@@ -54,9 +56,15 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob }) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'application/pdf': ['.pdf'], 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] },
+    accept: {
+      'application/pdf': ['.pdf'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/webp': ['.webp']
+    },
     multiple: true,
     maxSize: MAX_FILE_SIZE, // 20MB limit
+    maxFiles: 10 // Prevent uploading too many files at once
   });
 
   const completed = jobs.filter(j => j.status === 'completed').length;

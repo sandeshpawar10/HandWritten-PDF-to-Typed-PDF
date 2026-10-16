@@ -24,6 +24,7 @@ export function Editor({ doc, onBack, versions }) {
 
   // Auto-save timer ref
   const autoSaveTimer = useRef(null);
+  const saveTimeoutRef = useRef(null);
 
   useEffect(() => {
     setContent(doc.content);
@@ -45,7 +46,17 @@ export function Editor({ doc, onBack, versions }) {
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;
-    setIsSaving(true); setSaveError(null); setSaveSuccess(false);
+
+    // Cancel auto-save if manual save is triggered
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+
     try {
       await updateDocument(doc.id, { content, title });
       await saveVersion(doc.id, doc.userId, content, 'Manual save');
@@ -53,24 +64,51 @@ export function Editor({ doc, onBack, versions }) {
       setIsDirty(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-    } catch {
-      setSaveError('Save failed.');
+    } catch (error) {
+      setSaveError(error?.message || 'Save failed.');
+      console.error('Save error:', error);
     } finally {
       setIsSaving(false);
     }
   }, [content, title, doc.id, doc.userId, isSaving]);
 
   // Auto-save: debounced 5s after last edit
+  // Fixed memory leak by removing handleSave from dependencies
   useEffect(() => {
-    if (!isDirty) return;
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => {
-      handleSave();
+    if (!isDirty || isSaving) return;
+
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Set new timeout
+    saveTimeoutRef.current = setTimeout(async () => {
+      if (!isSaving && isDirty) {
+        setIsSaving(true);
+        setSaveError(null);
+
+        try {
+          await updateDocument(doc.id, { content, title });
+          await saveVersion(doc.id, doc.userId, content, 'Auto-save');
+          setLastSaved(new Date());
+          setIsDirty(false);
+        } catch (error) {
+          setSaveError(error?.message || 'Auto-save failed.');
+          console.error('Auto-save error:', error);
+        } finally {
+          setIsSaving(false);
+        }
+      }
     }, 5000);
+
+    // Cleanup
     return () => {
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
     };
-  }, [content, title, isDirty, handleSave]);
+  }, [content, title, isDirty, isSaving, doc.id, doc.userId]);
 
   const handleExport = async (format) => {
     setIsExporting(format);

@@ -1,17 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
-import { 
+import {
   FileText, Plus, LogOut, Search, Files, Sparkles, User, ArrowRight,
   AlertTriangle, X, Menu, Table2, Zap, Shield,
   LayoutDashboard, Layers, BookOpen
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut } from './lib/firebase';
 import { subscribeToDocuments, createDocument, subscribeToVersions } from './services/documents';
-import { convertHandwritingToText } from './services/mistral';
+import { convertHandwritingToText } from './services/ocr';
 import { FileUpload } from './components/FileUpload';
 import { DocumentList } from './components/DocumentList';
 import { Editor } from './components/Editor';
 import { OfflineBanner } from './components/OfflineBanner';
+import { ToastContainer, toast } from './components/Toast';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 import { cn } from './lib/utils';
@@ -90,7 +91,9 @@ export default function App() {
         await createDocument(user.uid, title, text, job.file.name);
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'completed', content: text, error: undefined } : j));
       } catch (err) {
-        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: err?.message || 'Failed' } : j));
+        console.error(`Job ${job.id} failed:`, err);
+        const errorMessage = err?.message || 'Processing failed. Please try again.';
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: errorMessage } : j));
       }
     }
   };
@@ -101,10 +104,23 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const filteredDocuments = documents.filter(doc =>
-    doc.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-    (debouncedSearch.length > SEARCH_MIN_LENGTH && doc.content.toLowerCase().includes(debouncedSearch.toLowerCase()))
-  );
+  // Memoized filtered documents to prevent unnecessary re-renders
+  const filteredDocuments = useMemo(() => {
+    if (!debouncedSearch) return documents;
+
+    const query = debouncedSearch.toLowerCase();
+    return documents.filter(doc => {
+      // Always search titles
+      if (doc.title.toLowerCase().includes(query)) return true;
+
+      // Only search content for longer queries (expensive operation)
+      if (query.length > SEARCH_MIN_LENGTH) {
+        return doc.content.toLowerCase().includes(query);
+      }
+
+      return false;
+    });
+  }, [documents, debouncedSearch]);
 
   if (loading) {
     return (
@@ -324,6 +340,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#F5F0E8] flex relative text-[#3D2E1C] font-sans selection:bg-[#8B5E3C]/20">
       <div className="nebula-bg" />
+
+      {/* Toast notifications */}
+      <ToastContainer />
 
       {/* Issue #30: Offline banner */}
       <OfflineBanner />

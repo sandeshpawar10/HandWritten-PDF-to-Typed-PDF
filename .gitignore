@@ -11,7 +11,36 @@ coverage/
 .env.*.local
 !.env.example
 
-# Firebase private keys
+# Firebase configuration - SENSITIVE
+firebase-applet-config.json
+firebase-blueprint.json
 **/serviceAccountKey.json
 firebase-debug.log
 .firebase/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+.temp/
+
+# Build artifacts
+dist/
+build/
+out/
+
+# TypeScript
+*.tsbuildinfo
