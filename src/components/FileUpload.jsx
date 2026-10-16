@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { exportToPdf } from '../services/export';
 import { toast } from './Toast';
+import { ChunkedProgressBar } from './ChunkedProgressBar';
 
 // File size limits - prevent backend OOM
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
@@ -16,7 +17,7 @@ function getFileIcon(fileName) {
   return FileImage;
 }
 
-export function FileUpload({ onFilesAdded, jobs, onRemoveJob }) {
+export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress }) {
   const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
     // Filter out files that are too large
     const validFiles = [];
@@ -235,17 +236,35 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob }) {
 
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-[#3D2E1C] truncate mb-1">{job.file.name}</p>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[11px] font-bold text-[#8C7B6B] flex items-center gap-1">
-                          <div className="w-1 h-1 rounded-full bg-[#8C7B6B]" />
-                          {(job.file.size / 1024 / 1024).toFixed(2)} MB
-                        </span>
-                        {job.status === 'failed' && (
-                          <span className="text-[10px] font-bold text-[#C25B4E] px-2 py-0.5 rounded-lg bg-red-50">
-                            {job.error}
+
+                      {/* Show progress bar if this job is processing and has progress data */}
+                      {job.status === 'converting' && processingProgress?.jobId === job.id && processingProgress.total > 0 ? (
+                        <div className="mt-2">
+                          <ChunkedProgressBar progress={processingProgress} />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] font-bold text-[#8C7B6B] flex items-center gap-1">
+                            <div className="w-1 h-1 rounded-full bg-[#8C7B6B]" />
+                            {(job.file.size / 1024 / 1024).toFixed(2)} MB
                           </span>
-                        )}
-                      </div>
+                          {job.status === 'converting' && job.error && (
+                            <span className="text-[10px] font-medium text-[#8B5E3C] px-2 py-0.5 rounded-lg bg-amber-50">
+                              {job.error}
+                            </span>
+                          )}
+                          {job.status === 'failed' && (
+                            <span className="text-[10px] font-bold text-[#C25B4E] px-2 py-0.5 rounded-lg bg-red-50">
+                              {job.error}
+                            </span>
+                          )}
+                          {job.status === 'completed' && job.totalPages && (
+                            <span className="text-[10px] font-bold text-[#5B8C5A] px-2 py-0.5 rounded-lg bg-green-50">
+                              {job.totalPages} pages processed
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">

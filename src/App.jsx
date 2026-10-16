@@ -465,7 +465,12 @@ export default function App() {
                     </motion.div>
                   ) : (
                     <motion.div key="upload" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}>
-                      <FileUpload onFilesAdded={handleFilesAdded} jobs={jobs} onRemoveJob={id => setJobs(p => p.filter(j => j.id !== id))} />
+                      <FileUpload
+                        onFilesAdded={handleFilesAdded}
+                        jobs={jobs}
+                        onRemoveJob={id => setJobs(p => p.filter(j => j.id !== id))}
+                        processingProgress={processingProgress}
+                      />
                       {jobs.some(j => j.status === 'completed') && (
                         <div className="mt-12 flex justify-center">
                           <button onClick={() => setView('list')} className="px-6 py-3 rounded-2xl bg-[#8B5E3C] text-white font-medium hover:bg-[#6B462C] shadow-md transition-all group inline-flex items-center">

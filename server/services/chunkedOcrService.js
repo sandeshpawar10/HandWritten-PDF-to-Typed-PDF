@@ -99,7 +99,12 @@ export const runChunkedOCR = async (body, onProgress) => {
             console.log(`Progress: ${progress.current_page}/${progress.total_pages} (${progress.percent}%)`);
           }
         } catch {
-          // Not a JSON progress update, ignore
+          // Not a JSON progress update, it's probably download progress or other stderr
+          // Ignore download progress bars and PaddleOCR initialization messages
+          if (!line.includes('download') && !line.includes('iB/s') && !line.includes('%|')) {
+            // Log non-progress stderr for debugging
+            // console.log('Python stderr:', line);
+          }
         }
       }
     });
@@ -128,12 +133,27 @@ export const runChunkedOCR = async (body, onProgress) => {
       if (code !== 0) {
         console.error('Chunked OCR error:', {
           code,
-          stderr: stderr.substring(0, 500),
-          stdout: stdout.substring(0, 500)
+          stderr: stderr.substring(0, 1000),
+          stdout: stdout.substring(0, 1000)
         });
 
+        // Try to extract only JSON errors from stderr (ignore download progress)
+        let errorData = null;
         try {
-          const errorData = JSON.parse(stderr.split('\n').filter(l => l.trim())[0]);
+          const stderrLines = stderr.split('\n').filter(l => l.trim());
+          // Find the last line that looks like JSON and is not a progress update
+          for (let i = stderrLines.length - 1; i >= 0; i--) {
+            const line = stderrLines[i];
+            if (line.startsWith('{') && !line.includes('"type": "progress"')) {
+              errorData = JSON.parse(line);
+              break;
+            }
+          }
+        } catch {
+          // Could not parse JSON error
+        }
+
+        if (errorData) {
           reject({
             status: 500,
             data: {
@@ -142,17 +162,27 @@ export const runChunkedOCR = async (body, onProgress) => {
               details: errorData
             }
           });
-        } catch {
+        } else {
           let errorMsg = 'Document processing failed';
 
           if (stderr.includes('ModuleNotFoundError')) {
             errorMsg = 'Required Python packages not installed. Please contact support.';
           } else if (stderr.includes('OutOfMemoryError') || stderr.includes('MemoryError')) {
             errorMsg = 'Server out of memory. Please try a smaller document.';
+          } else if (stderr.includes('download') && stderr.includes('tar')) {
+            errorMsg = 'OCR models are being downloaded. Please try again in 1-2 minutes.';
           } else if (stderr) {
-            const firstLine = stderr.split('\n').find(l => !l.startsWith('{'));
-            if (firstLine) {
-              errorMsg = `Processing error: ${firstLine.substring(0, 100)}`;
+            // Find the actual error line (not progress bars)
+            const errorLines = stderr.split('\n').filter(l =>
+              l.trim() &&
+              !l.includes('download') &&
+              !l.includes('iB/s') &&
+              !l.includes('%|') &&
+              !l.startsWith('{')
+            );
+            if (errorLines.length > 0) {
+              const firstError = errorLines[errorLines.length - 1];
+              errorMsg = `Processing error: ${firstError.substring(0, 100)}`;
             }
           }
 
