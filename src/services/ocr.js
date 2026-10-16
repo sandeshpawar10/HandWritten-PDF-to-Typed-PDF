@@ -20,7 +20,7 @@ const MAX_FILE_SIZE_MB = 20;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 3000;
 const MAX_DELAY_MS = 60000;
-const REQUEST_TIMEOUT_MS = 120000; // 2 minutes
+const REQUEST_TIMEOUT_MS = 300000; // 5 minutes (increased for PDF processing)
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));

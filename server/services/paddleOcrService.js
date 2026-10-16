@@ -62,7 +62,7 @@ export const runPaddleOCR = async (body) => {
 
     // Spawn Python process with timeout
     const python = spawn(pythonCmd, [pythonScript], {
-      timeout: 120000, // 2 minutes
+      timeout: 300000, // 5 minutes (increased for PDF processing)
       maxBuffer: 50 * 1024 * 1024 // 50MB buffer for large responses
     });
 
@@ -74,8 +74,8 @@ export const runPaddleOCR = async (body) => {
     const timeoutId = setTimeout(() => {
       processTimedOut = true;
       python.kill('SIGTERM');
-      console.error('PaddleOCR process timed out after 2 minutes');
-    }, 120000);
+      console.error('PaddleOCR process timed out after 5 minutes');
+    }, 300000);
 
     // Collect stdout
     python.stdout.on('data', (data) => {

@@ -27,25 +27,33 @@ def main():
         # Check if it's a PDF by looking at magic bytes
         is_pdf = image_bytes[:4] == b'%PDF'
 
+        # Initialize PaddleOCR once (moved outside conditional for reuse)
+        ocr = PaddleOCR(
+            use_angle_cls=True,
+            lang='en',
+            show_log=False,
+            use_gpu=False,
+            det_model_dir=None,  # Use default models
+            rec_model_dir=None,
+            cls_model_dir=None
+        )
+
         if is_pdf:
             # Handle PDF: convert each page to image
             pdf_document = fitz.open(stream=image_bytes, filetype="pdf")
-
-            # Initialize PaddleOCR once
-            ocr = PaddleOCR(
-                use_angle_cls=True,
-                lang='en',
-                show_log=False,
-                use_gpu=False
-            )
-
             pages_results = []
+            page_count = len(pdf_document)
 
-            for page_num in range(len(pdf_document)):
+            # Limit pages to prevent timeout (max 20 pages)
+            max_pages = min(page_count, 20)
+            if page_count > max_pages:
+                print(f"Note: Processing first {max_pages} of {page_count} pages", file=sys.stderr)
+
+            for page_num in range(max_pages):
                 page = pdf_document[page_num]
 
-                # Render page to image (higher DPI for better OCR)
-                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x scale for better quality
+                # Render page to image (1.5x scale - balance quality vs speed)
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
                 img_data = pix.tobytes("png")
                 image = Image.open(io.BytesIO(img_data))
 
@@ -82,14 +90,6 @@ def main():
         else:
             # Handle regular image
             image = Image.open(io.BytesIO(image_bytes))
-
-            # Initialize PaddleOCR
-            ocr = PaddleOCR(
-                use_angle_cls=True,
-                lang='en',
-                show_log=False,
-                use_gpu=False
-            )
 
             # Run OCR
             result = ocr.ocr(image, cls=True)
