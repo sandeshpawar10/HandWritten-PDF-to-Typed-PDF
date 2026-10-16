@@ -1,7 +1,15 @@
 import { PDFDocument } from 'pdf-lib';
 import { createDocxBuffer } from './docxExportService.js';
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+function getModelName() {
+  const envModel = process.env.GEMINI_MODEL;
+  if (!envModel || envModel.includes('2.0-flash') || envModel.includes('1.5-flash')) {
+    return 'gemini-3.8-flash';
+  }
+  return envModel;
+}
+
+const GEMINI_MODEL = getModelName();
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
