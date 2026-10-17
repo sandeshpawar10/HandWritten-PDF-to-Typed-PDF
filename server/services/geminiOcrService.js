@@ -93,10 +93,17 @@ Transcribe the provided document page into clean, publication-ready GitHub-flavo
 Return ONLY the clean Markdown transcription of this page without conversational preamble or conversational sign-off.`;
 
 /**
- * Track cooldowns and round-robin index across multiple API keys
+ * Rate limit parameters for Gemini Free Tier:
+ * 15 requests per minute per key = 1 request every 4,000 ms.
+ * We set MIN_KEY_INTERVAL_MS = 4,200 ms to provide a 5% buffer,
+ * guaranteeing zero 429 quota exhaustion errors during normal operation.
  */
-const keyCooldowns = new Map(); // apiKey -> timestamp (ms)
-let currentKeyIndex = 0;
+const MIN_KEY_INTERVAL_MS = 4200;
+
+const keyCooldowns = new Map(); // apiKey -> timestamp (ms) until which key is in 429/503 cooldown
+const keyLastUsedTime = new Map(); // apiKey -> timestamp (ms) when last request was initiated
+const inFlightKeys = new Set(); // apiKey -> actively executing an HTTP request
+let keyRoundRobinIndex = 0;
 
 /**
  * Parse all configured API keys (supports single key or comma-separated list of keys)
@@ -130,6 +137,86 @@ function parseRetryDelay(response, errJson) {
 }
 
 /**
+ * Fair token bucket & concurrency coordinator across the pool of Gemini API keys.
+ * Enforces:
+ * 1. Mutual exclusion: A key cannot be used by two workers simultaneously.
+ * 2. Rate pacing: Enforces a minimum interval of 4200ms per key (< 15 RPM).
+ * 3. Cooldown compliance: Skips keys cooling down from 429 or 503.
+ * 4. Automatic wait: If all keys are currently in use or cooling down, waits asynchronously
+ *    and streams status messages to the client.
+ */
+async function acquireApiKey(apiKeys, pageNum, totalPages, onProgress) {
+  while (true) {
+    const now = Date.now();
+    let soonestAvailableTime = Infinity;
+    let candidateFound = null;
+
+    // Search keys starting from keyRoundRobinIndex
+    for (let i = 0; i < apiKeys.length; i++) {
+      const idx = (keyRoundRobinIndex + i) % apiKeys.length;
+      const key = apiKeys[idx];
+
+      // If another worker is currently in-flight with this key, skip it
+      if (inFlightKeys.has(key)) {
+        continue;
+      }
+
+      // Check cooldown (from 429 or 503)
+      const cooldownUntil = keyCooldowns.get(key) || 0;
+      if (now < cooldownUntil) {
+        soonestAvailableTime = Math.min(soonestAvailableTime, cooldownUntil);
+        continue;
+      }
+
+      // Check minimum interval between requests for this key
+      const lastUsed = keyLastUsedTime.get(key) || 0;
+      const eligibleAt = lastUsed + MIN_KEY_INTERVAL_MS;
+      if (now < eligibleAt) {
+        soonestAvailableTime = Math.min(soonestAvailableTime, eligibleAt);
+        continue;
+      }
+
+      // Key is completely free, cooled down, and interval has passed!
+      candidateFound = { key, keyIndex: idx };
+      keyRoundRobinIndex = (idx + 1) % apiKeys.length;
+      break;
+    }
+
+    if (candidateFound) {
+      inFlightKeys.add(candidateFound.key);
+      keyLastUsedTime.set(candidateFound.key, Date.now());
+      return candidateFound;
+    }
+
+    // No key is ready right now. Calculate how long to wait.
+    let waitMs = soonestAvailableTime === Infinity ? 1000 : Math.max(100, soonestAvailableTime - now);
+    waitMs = Math.min(waitMs, 2000); // Check frequently in case an in-flight key finishes earlier
+
+    // If all keys are in cooldown from Google rate limits, notify progress
+    const allInCooldown = apiKeys.every(k => (keyCooldowns.get(k) || 0) > now);
+    if (allInCooldown) {
+      let maxWaitMs = 0;
+      for (const k of apiKeys) {
+        maxWaitMs = Math.max(maxWaitMs, (keyCooldowns.get(k) || 0) - now);
+      }
+      const waitSec = Math.ceil(maxWaitMs / 1000);
+      onProgress?.({
+        current: Math.max(0, pageNum - 1),
+        total: totalPages,
+        percent: Math.round(((pageNum - 1) / totalPages) * 100),
+        message: `⏳ Quota cooldown. Resuming page ${pageNum} in ${waitSec}s...`
+      });
+    }
+
+    await new Promise(r => setTimeout(r, waitMs));
+  }
+}
+
+function releaseApiKey(key) {
+  inFlightKeys.delete(key);
+}
+
+/**
  * Call Gemini Flash API using multi-key round-robin pool with smart failover,
  * jittered key selection, and persistent auto-recovery from 503 High Demand spikes.
  * @param {string} mimeType - MIME type of the part
@@ -141,120 +228,73 @@ function parseRetryDelay(response, errJson) {
  * @returns {Promise<string>} - Transcribed markdown
  */
 async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, totalPages, onProgress) {
-  const maxAttempts = Math.max(apiKeys.length * 5, 20);
+  const maxAttempts = Math.max(apiKeys.length * 6, 30);
   let attempts = 0;
 
   while (attempts < maxAttempts) {
     attempts++;
-    const now = Date.now();
 
-    // 1. Select the next available key that is not in cooldown with jittered offset
-    let selectedKey = null;
-    let selectedKeyNumber = 1;
-    const startOffset = Math.floor(Math.random() * apiKeys.length);
+    // Acquire an eligible, rate-paced key from the pool
+    const { key: selectedKey, keyIndex } = await acquireApiKey(apiKeys, pageNum, totalPages, onProgress);
+    const selectedKeyNumber = keyIndex + 1;
 
-    for (let i = 0; i < apiKeys.length; i++) {
-      const idx = (currentKeyIndex + startOffset + i) % apiKeys.length;
-      const candidateKey = apiKeys[idx];
-      const cooldownUntil = keyCooldowns.get(candidateKey) || 0;
-      if (now >= cooldownUntil) {
-        selectedKey = candidateKey;
-        selectedKeyNumber = idx + 1;
-        currentKeyIndex = (idx + 1) % apiKeys.length;
-        break;
-      }
-    }
-
-    // 2. If all keys are currently cooling down, wait for the one that resets soonest
-    if (!selectedKey) {
-      let soonestWaitMs = Infinity;
-      let soonestKey = apiKeys[0];
-
-      for (const k of apiKeys) {
-        const cooldownUntil = keyCooldowns.get(k) || 0;
-        const waitMs = Math.max(0, cooldownUntil - now);
-        if (waitMs < soonestWaitMs) {
-          soonestWaitMs = waitMs;
-          soonestKey = k;
-        }
-      }
-
-      const jitterSec = Math.floor(Math.random() * 2) + 1;
-      const waitSec = Math.max(1, Math.ceil(soonestWaitMs / 1000)) + jitterSec;
-      console.log(`All ${apiKeys.length} API key(s) in cooldown. Waiting ${waitSec}s for quota window reset...`);
-
-      for (let sec = waitSec; sec > 0; sec--) {
-        onProgress?.({
-          current: Math.max(0, pageNum - 1),
-          total: totalPages,
-          percent: Math.round(((pageNum - 1) / totalPages) * 100),
-          message: `⏳ Rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
-        });
-        await new Promise(r => setTimeout(r, 1000));
-      }
-
-      selectedKey = soonestKey;
-      keyCooldowns.delete(soonestKey);
-    }
-
-    // 3. Make the API request with the selected key on gemini-3.8-flash
-    const url = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${selectedKey}`;
-    const requestBody = {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: base64Data
-              }
-            },
-            {
-              text: OCR_SYSTEM_PROMPT
-            }
-          ]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 8192
-      }
-    };
-
-    let response;
     try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
-    } catch (fetchErr) {
-      console.warn(`Network glitch with key #${selectedKeyNumber} on page ${pageNum}:`, fetchErr.message);
-      await new Promise(r => setTimeout(r, 1500));
-      continue;
-    }
+      const url = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${selectedKey}`;
+      const requestBody = {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: base64Data
+                }
+              },
+              {
+                text: OCR_SYSTEM_PROMPT
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 8192
+        }
+      };
 
-    if (!response.ok) {
-      let errJson = null;
-      let errorDetail = `HTTP ${response.status} ${response.statusText}`;
+      let response;
       try {
-        errJson = await response.json();
-        errorDetail = errJson.error?.message || errorDetail;
-      } catch {
-        // ignore parse error
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+      } catch (fetchErr) {
+        console.warn(`Network glitch with key #${selectedKeyNumber} on page ${pageNum}:`, fetchErr.message);
+        keyCooldowns.set(selectedKey, Date.now() + 2000);
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
       }
 
-      // Handle HTTP 429 Rate Limit with Smart Key Failover
-      if (response.status === 429) {
-        const cooldownSec = parseRetryDelay(response, errJson);
-        keyCooldowns.set(selectedKey, Date.now() + cooldownSec * 1000);
-        console.warn(`⚠️ Key #${selectedKeyNumber} hit rate limit (429). Cooldown: ${cooldownSec}s.`);
+      if (!response.ok) {
+        let errJson = null;
+        let errorDetail = `HTTP ${response.status} ${response.statusText}`;
+        try {
+          errJson = await response.json();
+          errorDetail = errJson.error?.message || errorDetail;
+        } catch {
+          // ignore parse error
+        }
 
-        if (apiKeys.length > 1) {
-          console.log(`Rotating to next available API key for page ${pageNum}...`);
+        // Handle HTTP 429 Rate Limit with Smart Key Failover
+        if (response.status === 429) {
+          const cooldownSec = parseRetryDelay(response, errJson);
+          keyCooldowns.set(selectedKey, Date.now() + cooldownSec * 1000);
+          console.warn(`⚠️ Key #${selectedKeyNumber} hit rate limit (429). Cooldown: ${cooldownSec}s.`);
+
           onProgress?.({
             current: Math.max(0, pageNum - 1),
             total: totalPages,
@@ -262,70 +302,60 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
             message: `Key #${selectedKeyNumber} quota reached. Rotating to next key for page ${pageNum}...`
           });
           continue;
-        } else {
-          for (let sec = cooldownSec; sec > 0; sec--) {
+        }
+
+        // Handle HTTP 503 (High Demand), 500, 502, 504 - Transient Server Spikes from Google
+        const isTransientServerError = [500, 502, 503, 504].includes(response.status) ||
+          errorDetail.toLowerCase().includes('high demand') ||
+          errorDetail.toLowerCase().includes('temporarily unavailable') ||
+          errorDetail.toLowerCase().includes('try again later');
+
+        if (isTransientServerError) {
+          console.warn(`⚠️ High demand spike (${response.status}) on page ${pageNum} with key #${selectedKeyNumber} [attempt ${attempts}/${maxAttempts}]: ${errorDetail}`);
+
+          // Brief pause on this specific key
+          keyCooldowns.set(selectedKey, Date.now() + 3000);
+
+          // Exponential backoff
+          const backoffSec = Math.min(2 * Math.ceil(attempts / 2), 8);
+          for (let sec = backoffSec; sec > 0; sec--) {
             onProgress?.({
               current: Math.max(0, pageNum - 1),
               total: totalPages,
               percent: Math.round(((pageNum - 1) / totalPages) * 100),
-              message: `⏳ Rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
+              message: `⏳ High demand spike on Page ${pageNum}. Retrying in ${sec}s...`
             });
             await new Promise(r => setTimeout(r, 1000));
           }
-          keyCooldowns.delete(selectedKey);
+
           continue;
         }
-      }
 
-      // Handle HTTP 503 (High Demand), 500, 502, 504 - Transient Server Spikes from Google
-      const isTransientServerError = [500, 502, 503, 504].includes(response.status) ||
-        errorDetail.toLowerCase().includes('high demand') ||
-        errorDetail.toLowerCase().includes('temporarily unavailable') ||
-        errorDetail.toLowerCase().includes('try again later');
-
-      if (isTransientServerError) {
-        const isHighDemand = response.status === 503 || errorDetail.toLowerCase().includes('high demand');
-        console.warn(`⚠️ High demand spike (${response.status}) on page ${pageNum} with key #${selectedKeyNumber} [attempt ${attempts}/${maxAttempts}]: ${errorDetail}`);
-
-        // Rotate to another key from the 6-key pool immediately
-        currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
-
-        // Smart exponential backoff: 2s -> 4s -> 6s -> 8s
-        const backoffSec = Math.min(2 * attempts, 10);
-        for (let sec = backoffSec; sec > 0; sec--) {
-          onProgress?.({
-            current: Math.max(0, pageNum - 1),
-            total: totalPages,
-            percent: Math.round(((pageNum - 1) / totalPages) * 100),
-            message: `⏳ High demand spike on Page ${pageNum}. Retrying in ${sec}s...`
-          });
-          await new Promise(r => setTimeout(r, 1000));
+        if (response.status === 400) {
+          throw new Error(`API request error: ${errorDetail}`);
+        } else if (response.status === 403) {
+          throw new Error(`API authentication failed for key #${selectedKeyNumber}: ${errorDetail}`);
         }
 
-        // Retry cleanly on the next key
-        continue;
+        throw new Error(`API Error: ${errorDetail}`);
       }
 
-      if (response.status === 400) {
-        throw new Error(`API request error: ${errorDetail}`);
-      } else if (response.status === 403) {
-        throw new Error(`API authentication failed for key #${selectedKeyNumber}: ${errorDetail}`);
+      const result = await response.json();
+      const candidate = result.candidates?.[0];
+      const text = candidate?.content?.parts?.map(p => p.text).join('') || '';
+
+      if (!text) {
+        throw new Error('API returned an empty response for this page.');
       }
 
-      throw new Error(`API Error: ${errorDetail}`);
+      // Success! Clear cooldown for this key
+      keyCooldowns.delete(selectedKey);
+      return cleanMarkdownOutput(text);
+
+    } finally {
+      // Release key back into pool so another worker can acquire it
+      releaseApiKey(selectedKey);
     }
-
-    const result = await response.json();
-    const candidate = result.candidates?.[0];
-    const text = candidate?.content?.parts?.map(p => p.text).join('') || '';
-
-    if (!text) {
-      throw new Error('API returned an empty response for this page.');
-    }
-
-    // Success! Clear cooldown for this key
-    keyCooldowns.delete(selectedKey);
-    return cleanMarkdownOutput(text);
   }
 
   throw new Error(`Failed to transcribe page ${pageNum} after multiple retries across all available API keys.`);

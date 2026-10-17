@@ -16,8 +16,11 @@ const CHUNKED_OCR_URL = `${API_BASE}/api/v1/ocr/chunked`;
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB (increased for large PDFs)
 const WARN_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-// Timeouts
-const REQUEST_TIMEOUT_MS = 600000; // 10 minutes
+// Inactivity timeout: If no heartbeat or progress is received for 3 minutes,
+// consider connection stalled. Heartbeats are sent every 15s from server.
+const INACTIVITY_TIMEOUT_MS = 180000; // 3 minutes
+// Maximum safety cap for very large multi-page jobs
+const MAX_OVERALL_TIMEOUT_MS = 45 * 60 * 1000; // 45 minutes
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -69,17 +72,42 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
 
   const token = await auth.currentUser.getIdToken();
 
-  // Create AbortController for timeout and user cancellation
+  // Track cancellation source
+  let isCancelledByUser = false;
+  let isTimedOutDueToInactivity = false;
+  let isTimedOutOverall = false;
+
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  // Overall safety timeout (45 minutes)
+  const overallTimeoutId = setTimeout(() => {
+    isTimedOutOverall = true;
+    controller.abort();
+  }, MAX_OVERALL_TIMEOUT_MS);
+
+  // Rolling inactivity timer (resets whenever any SSE byte or heartbeat is received)
+  let inactivityTimer = null;
+  function pokeActivity() {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+      isTimedOutDueToInactivity = true;
+      controller.abort();
+    }, INACTIVITY_TIMEOUT_MS);
+  }
+
+  pokeActivity();
 
   if (externalSignal) {
     if (externalSignal.aborted) {
-      clearTimeout(timeoutId);
+      isCancelledByUser = true;
+      clearTimeout(overallTimeoutId);
+      if (inactivityTimer) clearTimeout(inactivityTimer);
       controller.abort();
     } else {
       externalSignal.addEventListener('abort', () => {
-        clearTimeout(timeoutId);
+        isCancelledByUser = true;
+        clearTimeout(overallTimeoutId);
+        if (inactivityTimer) clearTimeout(inactivityTimer);
         controller.abort();
       }, { once: true });
     }
@@ -102,7 +130,8 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
     });
 
     if (!res.ok) {
-      clearTimeout(timeoutId);
+      clearTimeout(overallTimeoutId);
+      if (inactivityTimer) clearTimeout(inactivityTimer);
       let errorMsg = `HTTP ${res.status}`;
       try {
         const text = await res.text();
@@ -128,6 +157,9 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+
+      // Reset inactivity timer on receipt of ANY data chunk or heartbeat
+      pokeActivity();
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -161,7 +193,8 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
       }
     }
 
-    clearTimeout(timeoutId);
+    clearTimeout(overallTimeoutId);
+    if (inactivityTimer) clearTimeout(inactivityTimer);
 
     // Process any remaining data in the buffer
     const remainingLines = buffer.split('\n');
@@ -208,10 +241,20 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
     };
 
   } catch (error) {
-    clearTimeout(timeoutId);
+    clearTimeout(overallTimeoutId);
+    if (inactivityTimer) clearTimeout(inactivityTimer);
 
-    if (error.name === 'AbortError') {
-      throw new Error("Request timed out after 10 minutes. Please try a smaller file or split your document.");
+    if (error.name === 'AbortError' || controller.signal.aborted) {
+      if (isCancelledByUser || externalSignal?.aborted) {
+        throw new Error("Conversion cancelled by user.");
+      }
+      if (isTimedOutDueToInactivity) {
+        throw new Error("Server communication paused (no response for 3 minutes). Click Retry to resume from saved pages.");
+      }
+      if (isTimedOutOverall) {
+        throw new Error("Job exceeded 45-minute limit. Click Retry to resume from saved pages.");
+      }
+      throw new Error("Request was interrupted. Click Retry to resume from saved pages.");
     }
 
     throw error;
