@@ -54,75 +54,216 @@ Transcribe the provided document page into clean, publication-ready GitHub-flavo
 Return ONLY the clean Markdown transcription of this page without conversational preamble or conversational sign-off.`;
 
 /**
- * Helper to call Gemini Flash API
+ * Track cooldowns and round-robin index across multiple API keys
+ */
+const keyCooldowns = new Map(); // apiKey -> timestamp (ms)
+let currentKeyIndex = 0;
+
+/**
+ * Parse all configured API keys (supports single key or comma-separated list of keys)
+ */
+function getApiKeys() {
+  const raw = process.env.GEMINI_API_KEY || '';
+  return raw
+    .split(',')
+    .map(k => k.trim())
+    .filter(k => k && k !== 'your_gemini_api_key_here');
+}
+
+/**
+ * Extract retry delay in seconds from Google's response headers or error message
+ */
+function parseRetryDelay(response, errJson) {
+  // 1. Try retry-after header
+  const retryHeader = response.headers.get('retry-after');
+  if (retryHeader) {
+    const sec = parseInt(retryHeader, 10);
+    if (!isNaN(sec) && sec > 0) return sec + 2;
+  }
+
+  // 2. Try parsing message: "Please retry in 28.219388019s."
+  const msg = errJson?.error?.message || '';
+  const match = msg.match(/retry in ([\d.]+)s/i);
+  if (match) {
+    const sec = parseFloat(match[1]);
+    if (!isNaN(sec) && sec > 0) return Math.ceil(sec) + 2;
+  }
+
+  // 3. Fallback default
+  return 30;
+}
+
+/**
+ * Call Gemini Flash API using multi-key round-robin pool with smart failover and auto-retry
  * @param {string} mimeType - MIME type of the part
  * @param {string} base64Data - Base64 encoded file data
- * @param {string} apiKey - Google Gemini API key
+ * @param {string[]} apiKeys - Array of Gemini API keys
+ * @param {number} pageNum - Current page number
+ * @param {number} totalPages - Total page count
+ * @param {Function} onProgress - Progress callback function
  * @returns {Promise<string>} - Transcribed markdown
  */
-async function callGeminiFlash(mimeType, base64Data, apiKey) {
-  const url = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, totalPages, onProgress) {
+  const maxAttempts = Math.max(apiKeys.length * 3, 6);
+  let attempts = 0;
 
-  const requestBody = {
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          {
-            inline_data: {
-              mime_type: mimeType,
-              data: base64Data
-            }
-          },
-          {
-            text: OCR_SYSTEM_PROMPT
-          }
-        ]
+  while (attempts < maxAttempts) {
+    attempts++;
+    const now = Date.now();
+
+    // 1. Select the next available key that is not in cooldown
+    let selectedKey = null;
+    let selectedKeyNumber = 1;
+
+    for (let i = 0; i < apiKeys.length; i++) {
+      const idx = (currentKeyIndex + i) % apiKeys.length;
+      const candidateKey = apiKeys[idx];
+      const cooldownUntil = keyCooldowns.get(candidateKey) || 0;
+      if (now >= cooldownUntil) {
+        selectedKey = candidateKey;
+        selectedKeyNumber = idx + 1;
+        currentKeyIndex = (idx + 1) % apiKeys.length;
+        break;
       }
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 8192
     }
-  };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(requestBody)
-  });
+    // 2. If all keys are currently cooling down, wait for the one that resets soonest
+    if (!selectedKey) {
+      let soonestWaitMs = Infinity;
+      let soonestKey = apiKeys[0];
 
-  if (!response.ok) {
-    let errorDetail = `HTTP ${response.status} ${response.statusText}`;
+      for (const k of apiKeys) {
+        const cooldownUntil = keyCooldowns.get(k) || 0;
+        const waitMs = Math.max(0, cooldownUntil - now);
+        if (waitMs < soonestWaitMs) {
+          soonestWaitMs = waitMs;
+          soonestKey = k;
+        }
+      }
+
+      const waitSec = Math.max(1, Math.ceil(soonestWaitMs / 1000));
+      console.log(`All ${apiKeys.length} Gemini API key(s) in cooldown. Waiting ${waitSec}s for quota window to reset...`);
+
+      // Stream live countdown to client (1-second tick)
+      for (let sec = waitSec; sec > 0; sec--) {
+        onProgress?.({
+          current: Math.max(0, pageNum - 1),
+          total: totalPages,
+          percent: Math.round(((pageNum - 1) / totalPages) * 100),
+          message: `⏳ Rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
+        });
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+      selectedKey = soonestKey;
+      keyCooldowns.delete(soonestKey);
+    }
+
+    // 3. Make the API request with the selected key
+    const url = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${selectedKey}`;
+    const requestBody = {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              inline_data: {
+                mime_type: mimeType,
+                data: base64Data
+              }
+            },
+            {
+              text: OCR_SYSTEM_PROMPT
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 8192
+      }
+    };
+
+    let response;
     try {
-      const errJson = await response.json();
-      errorDetail = errJson.error?.message || errorDetail;
-    } catch {
-      // ignore JSON parse error
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+    } catch (fetchErr) {
+      console.warn(`Network error with key #${selectedKeyNumber}:`, fetchErr.message);
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
     }
 
-    if (response.status === 429) {
-      throw new Error(`Gemini API rate limit exceeded. Please wait a moment and try again. (${errorDetail})`);
-    } else if (response.status === 400) {
-      throw new Error(`Gemini API request error: ${errorDetail}`);
-    } else if (response.status === 403) {
-      throw new Error(`Gemini API authentication failed. Please verify your GEMINI_API_KEY. (${errorDetail})`);
+    if (!response.ok) {
+      let errJson = null;
+      let errorDetail = `HTTP ${response.status} ${response.statusText}`;
+      try {
+        errJson = await response.json();
+        errorDetail = errJson.error?.message || errorDetail;
+      } catch {
+        // ignore JSON parse error
+      }
+
+      // Handle HTTP 429 Rate Limit with Smart Key Failover
+      if (response.status === 429) {
+        const cooldownSec = parseRetryDelay(response, errJson);
+        keyCooldowns.set(selectedKey, Date.now() + cooldownSec * 1000);
+        console.warn(`⚠️ Key #${selectedKeyNumber} hit rate limit (429). Cooldown: ${cooldownSec}s.`);
+
+        if (apiKeys.length > 1) {
+          // Immediately try the next key in the pool!
+          console.log(`Rotating to next available API key for page ${pageNum}...`);
+          onProgress?.({
+            current: Math.max(0, pageNum - 1),
+            total: totalPages,
+            percent: Math.round(((pageNum - 1) / totalPages) * 100),
+            message: `Key #${selectedKeyNumber} quota reached. Rotating to next API key for page ${pageNum}...`
+          });
+          continue;
+        } else {
+          // Single key: countdown wait
+          for (let sec = cooldownSec; sec > 0; sec--) {
+            onProgress?.({
+              current: Math.max(0, pageNum - 1),
+              total: totalPages,
+              percent: Math.round(((pageNum - 1) / totalPages) * 100),
+              message: `⏳ Free-tier rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
+            });
+            await new Promise(r => setTimeout(r, 1000));
+          }
+          keyCooldowns.delete(selectedKey);
+          continue;
+        }
+      }
+
+      if (response.status === 400) {
+        throw new Error(`Gemini API request error: ${errorDetail}`);
+      } else if (response.status === 403) {
+        throw new Error(`Gemini API authentication failed for key #${selectedKeyNumber}: ${errorDetail}`);
+      }
+
+      throw new Error(`Gemini API Error: ${errorDetail}`);
     }
 
-    throw new Error(`Gemini API Error: ${errorDetail}`);
+    const result = await response.json();
+    const candidate = result.candidates?.[0];
+    const text = candidate?.content?.parts?.map(p => p.text).join('') || '';
+
+    if (!text) {
+      throw new Error('Gemini Flash returned an empty response for this page.');
+    }
+
+    // Success! Clear cooldown for this key
+    keyCooldowns.delete(selectedKey);
+    return cleanMarkdownOutput(text);
   }
 
-  const result = await response.json();
-  const candidate = result.candidates?.[0];
-  const text = candidate?.content?.parts?.map(p => p.text).join('') || '';
-
-  if (!text) {
-    throw new Error('Gemini Flash returned an empty response for this page.');
-  }
-
-  return cleanMarkdownOutput(text);
+  throw new Error(`Failed to transcribe page ${pageNum} after multiple retries across all available API keys.`);
 }
 
 /**
@@ -130,7 +271,6 @@ async function callGeminiFlash(mimeType, base64Data, apiKey) {
  */
 function cleanMarkdownOutput(raw) {
   let cleaned = raw.trim();
-  // If the model wrapped everything in ```markdown ... ```
   if (cleaned.startsWith('```markdown') && cleaned.endsWith('```')) {
     cleaned = cleaned.slice(11, -3).trim();
   } else if (cleaned.startsWith('```md') && cleaned.endsWith('```')) {
@@ -146,8 +286,9 @@ function cleanMarkdownOutput(raw) {
  * @returns {Promise<Object>} - Formatted result with text, docx, page counts
  */
 export async function runGeminiOCR(body, onProgress) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+  const apiKeys = getApiKeys();
+
+  if (apiKeys.length === 0) {
     throw {
       status: 500,
       data: {
@@ -156,6 +297,8 @@ export async function runGeminiOCR(body, onProgress) {
       }
     };
   }
+
+  console.log(`Gemini OCR Service active with ${apiKeys.length} API key(s) in rotation pool.`);
 
   if (!body || typeof body !== 'object' || !body.document) {
     throw {
@@ -228,7 +371,7 @@ export async function runGeminiOCR(body, onProgress) {
 
       console.log(`Processing page ${pageNum}/${totalPages}...`);
 
-      // Extract single-page PDF in-memory
+      // Extract single-page PDF in-memory (100% individual page attention)
       const singlePageDoc = await PDFDocument.create();
       const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
       singlePageDoc.addPage(copiedPage);
@@ -236,7 +379,7 @@ export async function runGeminiOCR(body, onProgress) {
       const singlePageBase64 = Buffer.from(singlePageBytes).toString('base64');
 
       try {
-        const pageText = await callGeminiFlash('application/pdf', singlePageBase64, apiKey);
+        const pageText = await callGeminiFlashWithPool('application/pdf', singlePageBase64, apiKeys, pageNum, totalPages, onProgress);
         transcribedPages.push(`--- Page ${pageNum} ---\n\n${pageText}`);
       } catch (pageErr) {
         console.error(`Error transcribing page ${pageNum}:`, pageErr.message);
@@ -255,6 +398,11 @@ export async function runGeminiOCR(body, onProgress) {
         percent: Math.round((pageNum / totalPages) * 100),
         message: `Page ${pageNum} transcribed successfully.`
       });
+
+      // Gentle pause (1 second) between pages to keep network flow smooth
+      if (i < totalPages - 1) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
 
     onProgress?.({
@@ -294,7 +442,7 @@ export async function runGeminiOCR(body, onProgress) {
       message: 'Transcribing image with Gemini Flash...'
     });
 
-    const pageText = await callGeminiFlash(mimeType, rawData, apiKey);
+    const pageText = await callGeminiFlashWithPool(mimeType, rawData, apiKeys, 1, 1, onProgress);
 
     onProgress?.({
       current: 1,

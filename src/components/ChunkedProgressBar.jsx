@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+import { cn } from '../lib/utils';
 
 /**
  * Progress Bar Component for Chunked Processing
@@ -56,11 +57,11 @@ export function ChunkedProgressBar({ progress }) {
       </div>
 
       {/* Status Text */}
-      <div className="flex items-center justify-between text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs sm:text-sm">
         <div className="flex items-center gap-2">
           {safePercent < 100 ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-blue-600 shrink-0" />
               <span className="font-medium text-gray-700">
                 {safeTotal > 0 ? (
                   <>Processing page <span className="text-blue-600 font-bold">{safeCurrent}</span> of {safeTotal}</>
@@ -75,7 +76,7 @@ export function ChunkedProgressBar({ progress }) {
         </div>
 
         {safeTotal > 0 && (
-          <span className="text-xs text-gray-500 font-mono">
+          <span className="text-[11px] sm:text-xs text-gray-500 font-mono">
             {safeCurrent}/{safeTotal} pages
           </span>
         )}
@@ -83,8 +84,13 @@ export function ChunkedProgressBar({ progress }) {
 
       {/* Message */}
       {message && (
-        <div className="text-xs text-gray-600 italic bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-          {message}
+        <div className={cn(
+          "text-[11px] sm:text-xs px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl border transition-all duration-300 font-medium flex items-center gap-2 break-words leading-relaxed",
+          message.includes('Resuming') || message.includes('limit') || message.includes('quota') || message.includes('⏳')
+            ? "bg-amber-50 text-amber-900 border-amber-300 shadow-sm"
+            : "text-gray-600 bg-gray-50 border-gray-200"
+        )}>
+          <span>{message}</span>
         </div>
       )}
     </div>

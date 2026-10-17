@@ -352,23 +352,23 @@ export function Editor({ doc, onBack, versions }) {
         </header>
 
         {/* Paper Canvas */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-12 flex justify-center items-start scroll-smooth">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-12 flex justify-center items-start scroll-smooth">
           <motion.div layout initial={{y:40, opacity:0}} animate={{y:0, opacity:1}}
-            className="w-full max-w-[850px] min-h-[1100px] rounded-[1rem] shadow-[0_4px_20px_rgba(139,94,60,0.08)] relative overflow-hidden group bg-white border-t-4 border-t-[#8B5E3C] border-x border-b border-[#E8DFD0]">
+            className="w-full max-w-[850px] min-h-[600px] sm:min-h-[1100px] rounded-2xl sm:rounded-[1rem] shadow-[0_4px_20px_rgba(139,94,60,0.08)] relative overflow-hidden group bg-white border-t-4 border-t-[#8B5E3C] border-x border-b border-[#E8DFD0]">
             
             <AnimatePresence mode="wait">
               {mode === 'edit' ? (
-                <motion.div key="edit" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-16 sm:p-24">
+                <motion.div key="edit" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-5 sm:p-12 md:p-20">
                   <textarea value={content} onChange={e => { setContent(e.target.value); setIsDirty(true); setSaveSuccess(false); }}
-                    className="w-full min-h-[900px] resize-none border-none focus:ring-0 p-0 text-[#3D2E1C] leading-relaxed text-lg bg-transparent placeholder:text-[#8C7B6B]/50 font-mono focus:outline-none"
+                    className="w-full min-h-[500px] sm:min-h-[900px] resize-none border-none focus:ring-0 p-0 text-[#3D2E1C] leading-relaxed text-base sm:text-lg bg-transparent placeholder:text-[#8C7B6B]/50 font-mono focus:outline-none"
                     placeholder="Type or paste markdown..." spellCheck={false} />
                 </motion.div>
               ) : (
-                <motion.div key="preview" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-16 sm:p-24">
-                  <div className="mb-12 pb-8 border-b border-[#E8DFD0]">
-                    <h1 className="text-6xl font-serif font-black text-[#3D2E1C] leading-tight tracking-tighter-title">{title}</h1>
+                <motion.div key="preview" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-5 sm:p-12 md:p-20">
+                  <div className="mb-6 sm:mb-12 pb-4 sm:pb-8 border-b border-[#E8DFD0]">
+                    <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-serif font-black text-[#3D2E1C] leading-tight tracking-tight break-words">{title}</h1>
                   </div>
-                  {(content || '').trim() ? <MarkdownPreview content={content} /> : <div className="flex flex-col items-center justify-center py-32 opacity-50"><Sparkles className="w-12 h-12 mb-4 text-[#8B5E3C]" /><p className="font-serif font-bold tracking-wide text-sm text-[#3D2E1C]">Your document will appear here</p></div>}
+                  {(content || '').trim() ? <MarkdownPreview content={content} /> : <div className="flex flex-col items-center justify-center py-20 sm:py-32 opacity-50"><Sparkles className="w-10 h-10 sm:w-12 sm:h-12 mb-4 text-[#8B5E3C]" /><p className="font-serif font-bold tracking-wide text-sm text-[#3D2E1C]">Your document will appear here</p></div>}
                 </motion.div>
               )}
             </AnimatePresence>

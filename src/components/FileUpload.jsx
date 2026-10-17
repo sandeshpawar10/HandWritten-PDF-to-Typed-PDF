@@ -18,7 +18,7 @@ function getFileIcon(fileName) {
   return FileImage;
 }
 
-export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress }) {
+export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, processingProgress }) {
   const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
     // Filter out files that are too large
     const validFiles = [];
@@ -89,7 +89,7 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       >
         <div {...getRootProps()} className={cn(
-          "relative rounded-[2.5rem] border-2 border-dashed p-16 sm:p-24 text-center cursor-pointer overflow-hidden group backdrop-blur-sm",
+          "relative rounded-3xl sm:rounded-[2.5rem] border-2 border-dashed p-6 sm:p-12 md:p-20 text-center cursor-pointer overflow-hidden group backdrop-blur-sm",
           isDragActive
             ? "border-[#C4853C] bg-gradient-to-br from-[#8B5E3C]/10 to-[#C4853C]/5 scale-[0.98] shadow-xl"
             : "border-[#E8DFD0] bg-white/60 hover:border-[#C4853C]/40 hover:bg-white/80 shadow-md hover:shadow-lg",
@@ -112,7 +112,7 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
                   animate={{ scale: 1.2, opacity: 0.3 }}
                   exit={{ scale: 0.8, opacity: 0 }}
                   transition={{ duration: 0.5 }}
-                  className="absolute inset-0 bg-gradient-to-br from-[#8B5E3C]/20 to-transparent rounded-[2.5rem] blur-3xl"
+                  className="absolute inset-0 bg-gradient-to-br from-[#8B5E3C]/20 to-transparent rounded-3xl sm:rounded-[2.5rem] blur-3xl"
                 />
               </>
             )}
@@ -123,7 +123,7 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
               animate={isDragActive ? { scale: 1.3, rotate: 15, y: -5 } : { scale: 1, rotate: 0, y: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 20 }}
               className={cn(
-                "w-24 h-24 rounded-3xl flex items-center justify-center mb-8 relative",
+                "w-16 h-16 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl flex items-center justify-center mb-5 sm:mb-8 relative",
                 isDragActive
                   ? "bg-white border-2 border-[#C4853C] shadow-2xl"
                   : "bg-gradient-to-br from-white to-[#FFFBF5] border border-[#E8DFD0] group-hover:border-[#C4853C]/40 shadow-lg group-hover:shadow-xl",
@@ -131,29 +131,29 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
               )}
             >
               <Upload className={cn(
-                "w-9 h-9 transition-all duration-500",
+                "w-7 h-7 sm:w-9 sm:h-9 transition-all duration-500",
                 isDragActive ? "text-[#8B5E3C] scale-110" : "text-[#8C7B6B] group-hover:text-[#8B5E3C] group-hover:scale-110"
               )} />
               {!isDragActive && (
                 <motion.div
                   animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
                   transition={{ duration: 3, repeat: Infinity }}
-                  className="absolute inset-0 rounded-3xl bg-gradient-to-br from-[#8B5E3C]/0 to-[#8B5E3C]/10"
+                  className="absolute inset-0 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-[#8B5E3C]/0 to-[#8B5E3C]/10"
                 />
               )}
             </motion.div>
 
             <motion.h3
               animate={isDragActive ? { scale: 1.05 } : { scale: 1 }}
-              className="text-2xl font-display font-black text-[#3D2E1C] mb-3"
+              className="text-xl sm:text-2xl font-display font-black text-[#3D2E1C] mb-2 sm:mb-3"
             >
               {isDragActive ? "Drop to convert" : "Drop your handwritten notes"}
             </motion.h3>
-            <p className="text-sm text-[#8C7B6B] max-w-sm font-medium leading-relaxed">
+            <p className="text-xs sm:text-sm text-[#8C7B6B] max-w-sm font-medium leading-relaxed">
               Supports PDF and image files (max {MAX_FILE_SIZE_MB} MB per file)
             </p>
 
-            <div className="flex gap-3 mt-10">
+            <div className="flex gap-2 sm:gap-3 mt-6 sm:mt-10">
               {[
                 { label: 'PDF', icon: FileText },
                 { label: 'IMG', icon: FileImage }
@@ -188,23 +188,23 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
               <Sparkles className="w-4 h-4 text-[#8B5E3C]" />
               Conversion Progress
             </h4>
-            <div className="flex gap-5">
+            <div className="flex gap-2 sm:gap-5">
               {processing > 0 && (
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#C4853C]/10 border border-[#C4853C]/20"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#C4853C]/10 border border-[#C4853C]/20"
                 >
                   <motion.div
                     animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
                     transition={{ duration: 2, repeat: Infinity }}
                     className="w-2 h-2 rounded-full bg-[#C4853C]"
                   />
-                  <span className="text-xs font-bold text-[#C4853C]">{processing} active</span>
+                  <span className="text-[11px] sm:text-xs font-bold text-[#C4853C]">{processing} active</span>
                 </motion.div>
               )}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/60 backdrop-blur-sm border border-[#E8DFD0]">
-                <span className="text-xs font-bold text-[#8C7B6B]">{completed}/{total} completed</span>
+              <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-white/60 backdrop-blur-sm border border-[#E8DFD0]">
+                <span className="text-[11px] sm:text-xs font-bold text-[#8C7B6B]">{completed}/{total} completed</span>
               </div>
             </div>
           </div>
@@ -218,106 +218,144 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, processingProgress
                 return (
                   <motion.div
                     key={job.id}
-                    initial={{opacity:0, x:-20, scale: 0.95}}
-                    animate={{opacity:1, x:0, scale: 1}}
-                    exit={{opacity:0, x:20, scale: 0.95}}
+                    initial={{ opacity: 0, y: 15, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    className="glass-card p-5 flex items-center gap-5 group hover:shadow-xl"
+                    className="glass-card p-4 sm:p-5 flex flex-col gap-3 group hover:shadow-xl transition-shadow"
                   >
-                    <motion.div
-                      whileHover={{ scale: 1.1, rotate: 5 }}
-                      className={cn(
-                        "w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 border transition-all",
-                        cfg.bg,
-                        job.status === 'converting' && "animate-pulse"
-                      )}
-                    >
-                      <TypeIcon className={cn("w-6 h-6", cfg.color)} />
-                    </motion.div>
+                    {/* Top Tier: File Info on Left, Status Badge & Actions on Right */}
+                    <div className="flex items-center justify-between gap-3 w-full">
+                      {/* Left: Icon + File Name & Metadata */}
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <motion.div
+                          whileHover={{ scale: 1.05 }}
+                          className={cn(
+                            "w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 border transition-all",
+                            cfg.bg,
+                            job.status === 'converting' && "animate-pulse"
+                          )}
+                        >
+                          <TypeIcon className={cn("w-5 h-5 sm:w-6 sm:h-6", cfg.color)} />
+                        </motion.div>
 
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-[#3D2E1C] truncate mb-1">{job.file.name}</p>
-
-                      {/* Show progress bar if this job is processing and has progress data */}
-                      {job.status === 'converting' && processingProgress?.jobId === job.id ? (
-                        <div className="mt-2">
-                          <ChunkedProgressBar progress={processingProgress} />
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-3">
-                          <span className="text-[11px] font-bold text-[#8C7B6B] flex items-center gap-1">
-                            <div className="w-1 h-1 rounded-full bg-[#8C7B6B]" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs sm:text-sm font-bold text-[#3D2E1C] truncate" title={job.file.name}>
+                            {job.file.name}
+                          </p>
+                          <span className="text-[10px] sm:text-[11px] font-semibold text-[#8C7B6B] flex items-center gap-1.5 mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#8C7B6B]/60" />
                             {(job.file.size / 1024 / 1024).toFixed(2)} MB
                           </span>
-                          {job.status === 'converting' && job.progressMessage && (
-                            <span className="text-[10px] font-medium text-blue-700 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-100">
-                              {job.progressMessage}
-                            </span>
-                          )}
-                          {job.status === 'failed' && (
-                            <span className="text-[10px] font-bold text-[#C25B4E] px-2 py-0.5 rounded-lg bg-red-50">
-                              {job.error}
-                            </span>
-                          )}
-                          {job.status === 'completed' && job.totalPages && (
-                            <span className="text-[10px] font-bold text-[#5B8C5A] px-2 py-0.5 rounded-lg bg-green-50">
-                              {job.totalPages} pages processed
-                            </span>
-                          )}
                         </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className={cn(
-                        "flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border shadow-sm",
-                        cfg.bg,
-                        cfg.color
-                      )}>
-                        <StatusIcon className={cn("w-3.5 h-3.5", job.status === 'converting' && "animate-spin")} />
-                        {cfg.label}
                       </div>
 
-                      {job.status === 'completed' && (job.formattedPdf || job.content) && (
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => {
-                            if (job.formattedPdf) {
-                              downloadBase64File(job.formattedPdf, `${job.file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'application/pdf');
-                            } else {
-                              exportToPdf(job.file.name.replace(/\.[^/.]+$/, ''), job.content);
-                            }
-                          }}
-                          className="p-2.5 rounded-xl bg-white/80 border border-[#E8DFD0] hover:bg-[#8B5E3C]/10 hover:border-[#8B5E3C]/30 hover:text-[#8B5E3C] text-[#8C7B6B] transition-all shadow-sm hover:shadow-md magnetic"
-                        >
-                          <Download className="w-4 h-4" />
-                        </motion.button>
-                      )}
+                      {/* Right: Status Badge & Action Buttons */}
+                      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                        {/* Status Badge */}
+                        <div className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold border shadow-xs whitespace-nowrap",
+                          cfg.bg,
+                          cfg.color
+                        )}>
+                          <StatusIcon className={cn("w-3 h-3 sm:w-3.5 sm:h-3.5", job.status === 'converting' && "animate-spin")} />
+                          <span>{cfg.label}</span>
+                        </div>
 
-                      {job.status === 'failed' && (
+                        {/* Download button for completed */}
+                        {job.status === 'completed' && (job.formattedPdf || job.content) && (
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.08 }}
+                            whileTap={{ scale: 0.92 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (job.formattedPdf) {
+                                downloadBase64File(job.formattedPdf, `${job.file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'application/pdf');
+                              } else {
+                                exportToPdf(job.file.name.replace(/\.[^/.]+$/, ''), job.content);
+                              }
+                            }}
+                            title="Download formatted PDF"
+                            aria-label="Download formatted PDF"
+                            className="min-w-[36px] min-h-[36px] p-2 rounded-xl bg-white/90 border border-[#E8DFD0] hover:bg-[#8B5E3C]/10 hover:border-[#8B5E3C]/30 hover:text-[#8B5E3C] text-[#8C7B6B] flex items-center justify-center transition-all shadow-xs"
+                          >
+                            <Download className="w-4 h-4" />
+                          </motion.button>
+                        )}
+
+                        {/* Retry button for failed */}
+                        {job.status === 'failed' && (
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.08, rotate: 180 }}
+                            whileTap={{ scale: 0.92 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onRetryJob) {
+                                onRetryJob(job.id);
+                              } else {
+                                onRemoveJob(job.id);
+                                onFilesAdded([job.file]);
+                              }
+                            }}
+                            title="Retry conversion"
+                            aria-label="Retry conversion"
+                            className="min-w-[36px] min-h-[36px] p-2 rounded-xl bg-white/90 border border-[#C4853C]/30 hover:bg-[#C4853C]/10 hover:border-[#C4853C] text-[#C4853C] flex items-center justify-center transition-all shadow-xs"
+                          >
+                            <RotateCw className="w-4 h-4" />
+                          </motion.button>
+                        )}
+
+                        {/* Remove / Cancel button */}
                         <motion.button
-                          whileHover={{ scale: 1.1, rotate: 180 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => {
+                          type="button"
+                          whileHover={{ scale: 1.08 }}
+                          whileTap={{ scale: 0.92 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
                             onRemoveJob(job.id);
-                            onFilesAdded([job.file]);
                           }}
-                          className="p-2.5 rounded-xl bg-white/80 border border-[#E8DFD0] hover:bg-[#C4853C]/10 hover:border-[#C4853C]/30 hover:text-[#C4853C] text-[#8C7B6B] transition-all shadow-sm hover:shadow-md"
+                          title={job.status === 'converting' ? "Cancel conversion" : "Remove"}
+                          aria-label={job.status === 'converting' ? "Cancel conversion" : "Remove"}
+                          className="min-w-[36px] min-h-[36px] p-2 rounded-xl text-[#8C7B6B] hover:text-red-500 hover:bg-red-50/80 border border-transparent hover:border-red-200 flex items-center justify-center transition-all"
                         >
-                          <RotateCw className="w-4 h-4" />
+                          <X className="w-4 h-4" />
                         </motion.button>
-                      )}
-
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => onRemoveJob(job.id)}
-                        className="p-2 rounded-xl text-[#8C7B6B] hover:text-red-500 hover:bg-red-50 transition-all"
-                      >
-                        <X className="w-4 h-4" />
-                      </motion.button>
+                      </div>
                     </div>
+
+                    {/* Bottom Tier: Full-Width (100%) Progress Bar & Details */}
+                    {job.status === 'converting' && (
+                      <div className="w-full pt-1">
+                        {processingProgress?.jobId === job.id ? (
+                          <ChunkedProgressBar progress={processingProgress} />
+                        ) : job.progressMessage ? (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50/70 border border-blue-100 text-[11px] text-blue-700 font-medium">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-blue-600" />
+                            <span className="truncate">{job.progressMessage}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {job.status === 'failed' && job.error && (
+                      <div className="w-full pt-1">
+                        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-50/80 border border-red-100 text-[11px] text-[#C25B4E] font-medium leading-relaxed break-words">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#C25B4E]" />
+                          <span>{job.error}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {job.status === 'completed' && job.totalPages && (
+                      <div className="w-full pt-0.5 flex items-center justify-between text-[11px] text-[#5B8C5A] font-semibold">
+                        <span className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {job.totalPages} {job.totalPages === 1 ? 'page' : 'pages'} formatted successfully
+                        </span>
+                      </div>
+                    )}
                   </motion.div>
                 );
               })}

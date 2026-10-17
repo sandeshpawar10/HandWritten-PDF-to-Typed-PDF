@@ -30,7 +30,7 @@ function sleep(ms) {
  * @param {Function} onProgress - Progress callback (current, total, percent, message)
  * @returns {Object} { text, formattedPdf, formattedDocx, totalPages, pagesProcessed }
  */
-export async function convertToFormattedDocumentChunked(file, onProgress) {
+export async function convertToFormattedDocumentChunked(file, onProgress, externalSignal) {
   // File size validation
   if (file.size > MAX_FILE_SIZE) {
     throw new Error(
@@ -54,7 +54,7 @@ export async function convertToFormattedDocumentChunked(file, onProgress) {
     current: 0,
     total: 0,
     percent: 0,
-    message: isPdf ? "Starting PDF processing with chunked OCR..." : "Starting image processing..."
+    message: isPdf ? "Starting PDF processing with Gemini OCR..." : "Starting image processing..."
   });
 
   const base64 = await toBase64(file);
@@ -69,9 +69,21 @@ export async function convertToFormattedDocumentChunked(file, onProgress) {
 
   const token = await auth.currentUser.getIdToken();
 
-  // Create AbortController for timeout
+  // Create AbortController for timeout and user cancellation
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timeoutId);
+      controller.abort();
+    } else {
+      externalSignal.addEventListener('abort', () => {
+        clearTimeout(timeoutId);
+        controller.abort();
+      }, { once: true });
+    }
+  }
 
   try {
     const res = await fetch(CHUNKED_OCR_URL, {
@@ -268,11 +280,16 @@ function shouldFallbackToClient(error) {
  * @param {Function} onProgress - Progress callback
  * @returns {Object} { text, formattedPdf, formattedDocx, totalPages, pagesProcessed, clientSide? }
  */
-export async function convertWithFallback(file, onProgress) {
+export async function convertWithFallback(file, onProgress, externalSignal) {
   try {
     // Try server-side first
-    return await convertToFormattedDocumentChunked(file, onProgress);
+    return await convertToFormattedDocumentChunked(file, onProgress, externalSignal);
   } catch (serverError) {
+    // If cancelled by user, rethrow immediately without falling back to Tesseract
+    if (externalSignal?.aborted || serverError.name === 'AbortError') {
+      throw serverError;
+    }
+
     console.warn('Server OCR failed, checking if fallback is appropriate:', serverError.message);
 
     if (!shouldFallbackToClient(serverError)) {

@@ -68,10 +68,87 @@ export default function App() {
     }
   }, [selectedDoc, user]);
 
+  const abortControllersRef = useRef({});
+
+  const processJob = async (job) => {
+    const controller = new AbortController();
+    abortControllersRef.current[job.id] = controller;
+
+    setJobs(prev => prev.map(j => j.id === job.id ? {
+      ...j,
+      status: 'converting',
+      error: undefined,
+      progressMessage: 'Starting conversion...'
+    } : j));
+
+    try {
+      const result = await convertWithFallback(job.file, (progress) => {
+        if (controller.signal.aborted) return;
+        setProcessingProgress({
+          jobId: job.id,
+          ...progress
+        });
+        setJobs(prev => prev.map(j => j.id === job.id ? {
+          ...j,
+          status: 'converting',
+          progressMessage: progress.message
+        } : j));
+      }, controller.signal);
+
+      if (controller.signal.aborted) return;
+
+      setProcessingProgress(prev => prev?.jobId === job.id ? { ...prev, percent: 100, message: 'Complete!' } : null);
+      setTimeout(() => setProcessingProgress(prev => prev?.jobId === job.id ? null : prev), 1500);
+
+      if (!result.text || result.text.trim().length === 0) throw new Error('No text extracted.');
+
+      const title = job.file.name.replace(/\.[^/.]+$/, "");
+      await createDocument(user.uid, title, result.text, job.file.name);
+
+      setJobs(prev => prev.map(j => j.id === job.id ? {
+        ...j,
+        status: 'completed',
+        content: result.text,
+        formattedPdf: result.formattedPdf,
+        formattedDocx: result.formattedDocx,
+        totalPages: result.totalPages,
+        pagesProcessed: result.pagesProcessed,
+        error: undefined,
+        progressMessage: undefined
+      } : j));
+
+      if (result.formattedPdf) {
+        setFormattedDocument({
+          pdf: result.formattedPdf,
+          docx: result.formattedDocx,
+          filename: job.file.name
+        });
+      }
+
+      const method = result.clientSide ? '(browser-based OCR)' : '';
+      toast.success(`✨ Document formatted successfully! (${result.pagesProcessed || 1} pages processed) ${method}`);
+
+    } catch (err) {
+      if (controller.signal.aborted || err?.name === 'AbortError') {
+        console.log(`Job ${job.id} was aborted by user.`);
+        return;
+      }
+      console.error(`Job ${job.id} failed:`, err);
+      setProcessingProgress(prev => prev?.jobId === job.id ? null : prev);
+      const errorMessage = err?.message || 'Processing failed. Please try again.';
+      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: errorMessage } : j));
+      toast.error(errorMessage);
+    } finally {
+      delete abortControllersRef.current[job.id];
+    }
+  };
+
   const handleFilesAdded = async (files) => {
     setGlobalError(null);
     const newJobs = files.map(file => ({
-      file, id: Math.random().toString(36).substring(2, 11), status: 'pending'
+      file,
+      id: Math.random().toString(36).substring(2, 11),
+      status: 'pending'
     }));
     setJobs(prev => [...prev, ...newJobs]);
     setView('upload');
@@ -80,69 +157,38 @@ export default function App() {
     for (let idx = 0; idx < newJobs.length; idx++) {
       const job = newJobs[idx];
       if (idx > 0) await new Promise(r => setTimeout(r, JOB_DELAY_MS));
-
-      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'converting' } : j));
-      try {
-        // Use chunked OCR service with automatic client-side fallback
-        const result = await convertWithFallback(job.file, (progress) => {
-          // Update progress state
-          setProcessingProgress({
-            jobId: job.id,
-            ...progress
-          });
-
-          // Update job status with progress message
-          setJobs(prev => prev.map(j => j.id === job.id ? {
-            ...j,
-            status: 'converting',
-            progressMessage: progress.message
-          } : j));
-        });
-
-        // Let the progress show 100% briefly before clearing
-        setProcessingProgress(prev => prev ? { ...prev, percent: 100, message: 'Complete!' } : null);
-        setTimeout(() => setProcessingProgress(null), 1500);
-
-        if (!result.text || result.text.trim().length === 0) throw new Error('No text extracted.');
-
-        const title = job.file.name.replace(/\.[^/.]+$/, "");
-        await createDocument(user.uid, title, result.text, job.file.name);
-
-        setJobs(prev => prev.map(j => j.id === job.id ? {
-          ...j,
-          status: 'completed',
-          content: result.text,
-          formattedPdf: result.formattedPdf,
-          formattedDocx: result.formattedDocx,
-          totalPages: result.totalPages,
-          pagesProcessed: result.pagesProcessed,
-          error: undefined,
-          progressMessage: undefined
-        } : j));
-
-        // Auto-show formatted document viewer for the last completed job
-        if (idx === newJobs.length - 1 && result.formattedPdf) {
-          setFormattedDocument({
-            pdf: result.formattedPdf,
-            docx: result.formattedDocx,
-            filename: job.file.name
-          });
-        }
-
-        // Success notification with page count
-        const method = result.clientSide ? '(browser-based OCR)' : '';
-        toast.success(
-          `✨ Document formatted successfully! (${result.pagesProcessed} pages processed) ${method}`
-        );
-
-      } catch (err) {
-        console.error(`Job ${job.id} failed:`, err);
-        setProcessingProgress(null);
-        const errorMessage = err?.message || 'Processing failed. Please try again.';
-        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: errorMessage } : j));
-        toast.error(errorMessage);
-      }
+      await processJob(job);
     }
+  };
+
+  const handleRemoveJob = (jobId) => {
+    if (abortControllersRef.current[jobId]) {
+      try {
+        abortControllersRef.current[jobId].abort();
+      } catch {
+        // ignore
+      }
+      delete abortControllersRef.current[jobId];
+    }
+    setJobs(prev => prev.filter(j => j.id !== jobId));
+    setProcessingProgress(prev => prev?.jobId === jobId ? null : prev);
+    toast.info('Item removed');
+  };
+
+  const handleRetryJob = async (jobId) => {
+    const jobToRetry = jobs.find(j => j.id === jobId);
+    if (!jobToRetry) return;
+
+    if (abortControllersRef.current[jobId]) {
+      try {
+        abortControllersRef.current[jobId].abort();
+      } catch {
+        // ignore
+      }
+      delete abortControllersRef.current[jobId];
+    }
+
+    await processJob(jobToRetry);
   };
 
   // Debounce search input
@@ -433,8 +479,8 @@ export default function App() {
             </motion.div>
           ) : (
             <motion.div key="main" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="flex-1 overflow-y-auto">
-              <div className="max-w-6xl mx-auto py-10 px-6 sm:px-10">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-12">
+              <div className="max-w-6xl mx-auto py-6 sm:py-10 px-4 sm:px-10">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 sm:mb-12">
                   <div className="flex items-center gap-4">
                     <button onClick={() => setMobileSidebar(true)} className="p-3 rounded-2xl bg-white border border-[#E8DFD0] shadow-sm md:hidden text-[#3D2E1C]">
                       <Menu className="w-5 h-5" />
@@ -476,7 +522,8 @@ export default function App() {
                       <FileUpload
                         onFilesAdded={handleFilesAdded}
                         jobs={jobs}
-                        onRemoveJob={id => setJobs(p => p.filter(j => j.id !== id))}
+                        onRemoveJob={handleRemoveJob}
+                        onRetryJob={handleRetryJob}
                         processingProgress={processingProgress}
                       />
                       {jobs.some(j => j.status === 'completed') && (
