@@ -136,7 +136,7 @@ export function FormattedDocumentViewer({ formattedPdf, formattedDocx, filename,
               <span className="truncate">Formatted with headings, bold, and proper spacing</span>
             </div>
             <div className="text-[11px] text-gray-500 shrink-0">
-              Auto-formatted by Gemini AI
+              Auto-formatted document
             </div>
           </div>
         </div>

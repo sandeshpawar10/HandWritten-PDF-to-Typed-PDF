@@ -1,18 +1,8 @@
 import { PDFDocument } from 'pdf-lib';
 import { createDocxBuffer } from './docxExportService.js';
 
-function getModelChain() {
-  const envModel = process.env.GEMINI_MODEL;
-  const models = [];
-  if (envModel && !envModel.includes('2.0-flash')) {
-    models.push(envModel);
-  }
-  // Standard high-performance Flash fallback chain
-  models.push('gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash');
-  return [...new Set(models)];
-}
-
-const MODEL_CHAIN = getModelChain();
+// Exclusively use gemini-3.8-flash (deprecated models like gemini-2.5-flash are rejected by Google)
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
@@ -101,7 +91,7 @@ function parseRetryDelay(response, errJson) {
 
 /**
  * Call Gemini Flash API using multi-key round-robin pool with smart failover,
- * automatic recovery from 503 High Demand spikes, and model fallback.
+ * and persistent auto-recovery from 503 High Demand spikes across the 6-key pool.
  * @param {string} mimeType - MIME type of the part
  * @param {string} base64Data - Base64 encoded file data
  * @param {string[]} apiKeys - Array of Gemini API keys
@@ -111,9 +101,8 @@ function parseRetryDelay(response, errJson) {
  * @returns {Promise<string>} - Transcribed markdown
  */
 async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, totalPages, onProgress) {
-  const maxAttempts = Math.max(apiKeys.length * 4, 10);
+  const maxAttempts = Math.max(apiKeys.length * 4, 16);
   let attempts = 0;
-  let modelIndex = 0;
 
   while (attempts < maxAttempts) {
     attempts++;
@@ -150,14 +139,14 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
       }
 
       const waitSec = Math.max(1, Math.ceil(soonestWaitMs / 1000));
-      console.log(`All ${apiKeys.length} Gemini API key(s) in cooldown. Waiting ${waitSec}s for quota window to reset...`);
+      console.log(`All ${apiKeys.length} API key(s) in cooldown. Waiting ${waitSec}s for window reset...`);
 
       for (let sec = waitSec; sec > 0; sec--) {
         onProgress?.({
           current: Math.max(0, pageNum - 1),
           total: totalPages,
           percent: Math.round(((pageNum - 1) / totalPages) * 100),
-          message: `⏳ Free-tier rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
+          message: `⏳ Rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
         });
         await new Promise(r => setTimeout(r, 1000));
       }
@@ -166,9 +155,8 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
       keyCooldowns.delete(soonestKey);
     }
 
-    // 3. Make the API request with the selected key and active model
-    const currentModel = MODEL_CHAIN[modelIndex % MODEL_CHAIN.length];
-    const url = `${GEMINI_API_URL}/${currentModel}:generateContent?key=${selectedKey}`;
+    // 3. Make the API request with the selected key on gemini-3.8-flash
+    const url = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${selectedKey}`;
     const requestBody = {
       contents: [
         {
@@ -203,7 +191,7 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
       });
     } catch (fetchErr) {
       console.warn(`Network glitch with key #${selectedKeyNumber} on page ${pageNum}:`, fetchErr.message);
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 1500));
       continue;
     }
 
@@ -229,7 +217,7 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
             current: Math.max(0, pageNum - 1),
             total: totalPages,
             percent: Math.round(((pageNum - 1) / totalPages) * 100),
-            message: `Key #${selectedKeyNumber} quota reached. Rotating to next API key for page ${pageNum}...`
+            message: `Key #${selectedKeyNumber} quota reached. Rotating to next key for page ${pageNum}...`
           });
           continue;
         } else {
@@ -255,36 +243,34 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
 
       if (isTransientServerError) {
         const isHighDemand = response.status === 503 || errorDetail.toLowerCase().includes('high demand');
-        console.warn(`⚠️ Gemini ${isHighDemand ? 'high demand spike (503)' : `server error (${response.status})`} on page ${pageNum} [attempt ${attempts}/${maxAttempts}]: ${errorDetail}`);
+        console.warn(`⚠️ High demand spike (${response.status}) on page ${pageNum} with key #${selectedKeyNumber} [attempt ${attempts}/${maxAttempts}]: ${errorDetail}`);
 
-        // If the current model is persistently congested after 2 attempts, fall back to next model
-        if (isHighDemand && attempts >= 2 && MODEL_CHAIN.length > 1) {
-          modelIndex = (modelIndex + 1) % MODEL_CHAIN.length;
-          console.log(`Switching to alternate Flash model (${MODEL_CHAIN[modelIndex]}) for page ${pageNum}...`);
-        }
+        // Rotate to another key from the 6-key pool immediately
+        currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
 
-        const backoffSec = Math.min(2 * attempts + 1, 12);
+        // Smart exponential backoff: 2s -> 4s -> 6s -> 8s
+        const backoffSec = Math.min(2 * attempts, 10);
         for (let sec = backoffSec; sec > 0; sec--) {
           onProgress?.({
             current: Math.max(0, pageNum - 1),
             total: totalPages,
             percent: Math.round(((pageNum - 1) / totalPages) * 100),
-            message: `⏳ Google servers busy on Page ${pageNum} (${isHighDemand ? 'high demand spike' : 'temporary error'}). Retrying in ${sec}s...`
+            message: `⏳ High demand spike on Page ${pageNum}. Retrying in ${sec}s...`
           });
           await new Promise(r => setTimeout(r, 1000));
         }
 
-        // Rotate to another key and retry seamlessly
+        // Retry cleanly on the next key
         continue;
       }
 
       if (response.status === 400) {
-        throw new Error(`Gemini API request error: ${errorDetail}`);
+        throw new Error(`API request error: ${errorDetail}`);
       } else if (response.status === 403) {
-        throw new Error(`Gemini API authentication failed for key #${selectedKeyNumber}: ${errorDetail}`);
+        throw new Error(`API authentication failed for key #${selectedKeyNumber}: ${errorDetail}`);
       }
 
-      throw new Error(`Gemini API Error: ${errorDetail}`);
+      throw new Error(`API Error: ${errorDetail}`);
     }
 
     const result = await response.json();
@@ -292,7 +278,7 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
     const text = candidate?.content?.parts?.map(p => p.text).join('') || '';
 
     if (!text) {
-      throw new Error('Gemini Flash returned an empty response for this page.');
+      throw new Error('API returned an empty response for this page.');
     }
 
     // Success! Clear cooldown for this key
@@ -304,7 +290,7 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
 }
 
 /**
- * Clean up raw Gemini output (remove unnecessary markdown fences wrapping the entire output)
+ * Clean up raw markdown output (remove unnecessary outer fences)
  */
 function cleanMarkdownOutput(raw) {
   let cleaned = raw.trim();
@@ -317,7 +303,7 @@ function cleanMarkdownOutput(raw) {
 }
 
 /**
- * Main chunked Gemini OCR processing function with parallel multi-key worker pool
+ * Main chunked OCR processing function with parallel multi-key worker pool
  * @param {Object} body - Request body containing document payload
  * @param {Function} onProgress - Progress callback function (current, total, percent, message)
  * @returns {Promise<Object>} - Formatted result with text, docx, page counts
@@ -329,13 +315,13 @@ export async function runGeminiOCR(body, onProgress) {
     throw {
       status: 500,
       data: {
-        error: 'Google Gemini API key is not configured. Please set GEMINI_API_KEY in your .env file or server environment.',
+        error: 'API key is not configured. Please set GEMINI_API_KEY in your .env file or server environment.',
         type: 'CONFIG_ERROR'
       }
     };
   }
 
-  console.log(`Gemini OCR Service active with ${apiKeys.length} API key(s) in rotation pool.`);
+  console.log(`OCR Service active with ${apiKeys.length} API key(s) in rotation pool.`);
 
   if (!body || typeof body !== 'object' || !body.document) {
     throw {
@@ -398,7 +384,7 @@ export async function runGeminiOCR(body, onProgress) {
       current: 0,
       total: totalPages,
       percent: 0,
-      message: `Starting parallel Gemini Flash OCR (${concurrency} workers active)...`
+      message: `Starting parallel processing (${concurrency} workers active)...`
     });
 
     const results = new Array(totalPages);
@@ -441,7 +427,7 @@ export async function runGeminiOCR(body, onProgress) {
           current: completedCount,
           total: totalPages,
           percent: Math.round((completedCount / totalPages) * 100),
-          message: `Transcribing page ${pageNum} of ${totalPages} (${concurrency} pages running in parallel)...`
+          message: `Transcribing page ${pageNum} of ${totalPages}...`
         });
 
         try {
@@ -471,7 +457,7 @@ export async function runGeminiOCR(body, onProgress) {
             status: 500,
             data: {
               error: `Failed to transcribe page ${pageNum}: ${pageErr.message}`,
-              type: 'GEMINI_PAGE_ERROR'
+              type: 'PAGE_ERROR'
             }
           };
         }
@@ -520,7 +506,7 @@ export async function runGeminiOCR(body, onProgress) {
       current: 0,
       total: 1,
       percent: 25,
-      message: 'Transcribing image with Gemini Flash...'
+      message: 'Transcribing image...'
     });
 
     const pageText = await callGeminiFlashWithPool(mimeType, rawData, apiKeys, 1, 1, onProgress);

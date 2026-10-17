@@ -54,7 +54,7 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
     current: 0,
     total: 0,
     percent: 0,
-    message: isPdf ? "Starting PDF processing with Gemini OCR..." : "Starting image processing..."
+    message: isPdf ? "Starting PDF processing..." : "Starting image processing..."
   });
 
   const base64 = await toBase64(file);
