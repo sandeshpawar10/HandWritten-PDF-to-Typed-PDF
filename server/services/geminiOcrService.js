@@ -3,8 +3,32 @@ import path from 'path';
 import { PDFDocument } from 'pdf-lib';
 import { createDocxBuffer } from './docxExportService.js';
 
-// Exclusively use gemini-3.8-flash (deprecated models like gemini-2.5-flash are rejected by Google)
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+// Active Gemini models in priority fallback order
+// If the primary model exhausts quota, the system falls back to the next model in the chain
+const CANDIDATE_MODELS = [
+  process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite'
+].filter((m, i, arr) => arr.indexOf(m) === i);
+
+let currentModelIndex = 0;
+
+function getActiveModel() {
+  return CANDIDATE_MODELS[currentModelIndex % CANDIDATE_MODELS.length];
+}
+
+function switchToNextModel() {
+  if (currentModelIndex < CANDIDATE_MODELS.length - 1) {
+    currentModelIndex++;
+    console.log(`[Model Fallback] Switching active model to: ${getActiveModel()}`);
+    // Clear cooldowns because Google's quota is enforced independently per model
+    keyCooldowns.clear();
+    return true;
+  }
+  return false;
+}
+
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
@@ -228,8 +252,9 @@ function releaseApiKey(key) {
  * @returns {Promise<string>} - Transcribed markdown
  */
 async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, totalPages, onProgress) {
-  const maxAttempts = Math.max(apiKeys.length * 6, 30);
+  const maxAttempts = Math.max(apiKeys.length * 3, 18);
   let attempts = 0;
+  let consecutiveQuotaErrors = 0;
 
   while (attempts < maxAttempts) {
     attempts++;
@@ -237,9 +262,10 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
     // Acquire an eligible, rate-paced key from the pool
     const { key: selectedKey, keyIndex } = await acquireApiKey(apiKeys, pageNum, totalPages, onProgress);
     const selectedKeyNumber = keyIndex + 1;
+    const currentModel = getActiveModel();
 
     try {
-      const url = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${selectedKey}`;
+      const url = `${GEMINI_API_URL}/${currentModel}:generateContent?key=${selectedKey}`;
       const requestBody = {
         contents: [
           {
@@ -289,11 +315,32 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
           // ignore parse error
         }
 
-        // Handle HTTP 429 Rate Limit with Smart Key Failover
+        // Handle HTTP 429 Rate Limit with Smart Key Failover & Model Fallback
         if (response.status === 429) {
+          consecutiveQuotaErrors++;
           const cooldownSec = parseRetryDelay(response, errJson);
           keyCooldowns.set(selectedKey, Date.now() + cooldownSec * 1000);
-          console.warn(`⚠️ Key #${selectedKeyNumber} hit rate limit (429). Cooldown: ${cooldownSec}s.`);
+          console.warn(`⚠️ Key #${selectedKeyNumber} hit rate limit (429) on ${currentModel}: ${errorDetail}. Cooldown: ${cooldownSec}s.`);
+
+          // Circuit breaker: If all keys in the pool fail consecutively on this model,
+          // switch to the next fallback model (e.g. gemini-3.5-flash-lite)
+          if (consecutiveQuotaErrors >= apiKeys.length) {
+            console.warn(`All ${apiKeys.length} API keys exhausted quota on ${currentModel}. Attempting model fallback...`);
+            if (switchToNextModel()) {
+              consecutiveQuotaErrors = 0;
+              const nextModel = getActiveModel();
+              onProgress?.({
+                current: Math.max(0, pageNum - 1),
+                total: totalPages,
+                percent: Math.round(((pageNum - 1) / totalPages) * 100),
+                message: `Quota reached on ${currentModel}. Switching to ${nextModel}...`
+              });
+              continue;
+            } else {
+              // All models exhausted across all keys - stop immediately instead of looping
+              throw new Error(`Daily free-tier quota exhausted across all ${apiKeys.length} API keys and models (${errorDetail}). Quota resets at midnight Pacific Time. To remove all limits permanently, link a billing account in Google AI Studio.`);
+            }
+          }
 
           onProgress?.({
             current: Math.max(0, pageNum - 1),
@@ -348,7 +395,8 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
         throw new Error('API returned an empty response for this page.');
       }
 
-      // Success! Clear cooldown for this key
+      // Success! Reset consecutive quota error counter and clear key cooldown
+      consecutiveQuotaErrors = 0;
       keyCooldowns.delete(selectedKey);
       return cleanMarkdownOutput(text);
 
@@ -444,10 +492,10 @@ export async function runGeminiOCR(body, onProgress) {
       };
     }
 
-    // Determine concurrency based on available API keys (default: 3 concurrent workers)
+    // Determine concurrency based on available API keys (default: 1 sequential worker for zero-collision rate stability)
     const concurrency = Math.min(
       Math.max(1, apiKeys.length),
-      parseInt(process.env.OCR_CONCURRENCY || '3', 10)
+      parseInt(process.env.OCR_CONCURRENCY || '1', 10)
     );
 
     // Document unique signature for disk and memory caching
