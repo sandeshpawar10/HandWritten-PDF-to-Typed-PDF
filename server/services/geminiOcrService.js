@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { PDFDocument } from 'pdf-lib';
 import { createDocxBuffer } from './docxExportService.js';
 
@@ -6,10 +8,48 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
- * In-memory page cache to store completed page transcriptions.
- * If a job is retried or interrupted, already completed pages are served instantly.
+ * Persistent on-disk and in-memory page cache.
+ * Survives process restarts, container redeployments, and network interruptions.
  */
+const CACHE_DIR = path.join(process.cwd(), '.ocr_cache');
+try {
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Could not initialize .ocr_cache directory:', e.message);
+}
+
 const pageMemoryCache = new Map();
+
+function getCachedPage(cacheKey) {
+  if (pageMemoryCache.has(cacheKey)) {
+    return pageMemoryCache.get(cacheKey);
+  }
+  try {
+    const filePath = path.join(CACHE_DIR, `${cacheKey}.md`);
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      if (content && content.trim().length > 0) {
+        pageMemoryCache.set(cacheKey, content);
+        return content;
+      }
+    }
+  } catch (e) {
+    // ignore read error
+  }
+  return null;
+}
+
+function saveCachedPage(cacheKey, content) {
+  pageMemoryCache.set(cacheKey, content);
+  try {
+    const filePath = path.join(CACHE_DIR, `${cacheKey}.md`);
+    fs.writeFileSync(filePath, content, 'utf8');
+  } catch (e) {
+    console.warn(`Failed to persist cache for ${cacheKey}:`, e.message);
+  }
+}
 
 /**
  * Strict academic prompt engineered for verbatim transcription,
@@ -91,7 +131,7 @@ function parseRetryDelay(response, errJson) {
 
 /**
  * Call Gemini Flash API using multi-key round-robin pool with smart failover,
- * and persistent auto-recovery from 503 High Demand spikes across the 6-key pool.
+ * jittered key selection, and persistent auto-recovery from 503 High Demand spikes.
  * @param {string} mimeType - MIME type of the part
  * @param {string} base64Data - Base64 encoded file data
  * @param {string[]} apiKeys - Array of Gemini API keys
@@ -101,19 +141,20 @@ function parseRetryDelay(response, errJson) {
  * @returns {Promise<string>} - Transcribed markdown
  */
 async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, totalPages, onProgress) {
-  const maxAttempts = Math.max(apiKeys.length * 4, 16);
+  const maxAttempts = Math.max(apiKeys.length * 5, 20);
   let attempts = 0;
 
   while (attempts < maxAttempts) {
     attempts++;
     const now = Date.now();
 
-    // 1. Select the next available key that is not in cooldown
+    // 1. Select the next available key that is not in cooldown with jittered offset
     let selectedKey = null;
     let selectedKeyNumber = 1;
+    const startOffset = Math.floor(Math.random() * apiKeys.length);
 
     for (let i = 0; i < apiKeys.length; i++) {
-      const idx = (currentKeyIndex + i) % apiKeys.length;
+      const idx = (currentKeyIndex + startOffset + i) % apiKeys.length;
       const candidateKey = apiKeys[idx];
       const cooldownUntil = keyCooldowns.get(candidateKey) || 0;
       if (now >= cooldownUntil) {
@@ -138,8 +179,9 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
         }
       }
 
-      const waitSec = Math.max(1, Math.ceil(soonestWaitMs / 1000));
-      console.log(`All ${apiKeys.length} API key(s) in cooldown. Waiting ${waitSec}s for window reset...`);
+      const jitterSec = Math.floor(Math.random() * 2) + 1;
+      const waitSec = Math.max(1, Math.ceil(soonestWaitMs / 1000)) + jitterSec;
+      console.log(`All ${apiKeys.length} API key(s) in cooldown. Waiting ${waitSec}s for quota window reset...`);
 
       for (let sec = waitSec; sec > 0; sec--) {
         onProgress?.({
@@ -303,7 +345,7 @@ function cleanMarkdownOutput(raw) {
 }
 
 /**
- * Main chunked OCR processing function with parallel multi-key worker pool
+ * Main chunked OCR processing function with persistent resume support & parallel worker pool
  * @param {Object} body - Request body containing document payload
  * @param {Function} onProgress - Progress callback function (current, total, percent, message)
  * @returns {Promise<Object>} - Formatted result with text, docx, page counts
@@ -378,99 +420,114 @@ export async function runGeminiOCR(body, onProgress) {
       parseInt(process.env.OCR_CONCURRENCY || '3', 10)
     );
 
-    console.log(`Processing ${totalPages} pages with concurrency = ${concurrency} across ${apiKeys.length} API keys...`);
-
-    onProgress?.({
-      current: 0,
-      total: totalPages,
-      percent: 0,
-      message: `Starting parallel processing (${concurrency} workers active)...`
-    });
-
-    const results = new Array(totalPages);
-    let completedCount = 0;
-    let nextIndex = 0;
-
-    // Cache namespace based on document buffer signature
+    // Document unique signature for disk and memory caching
     const docSignature = `${buffer.length}_${buffer.subarray(0, 64).toString('hex')}`;
 
-    async function worker(workerId) {
-      while (nextIndex < totalPages) {
-        const i = nextIndex++;
-        const pageNum = i + 1;
-        const cacheKey = `${docSignature}_page_${pageNum}`;
+    // PRE-SCAN: Scan for any pages ALREADY completed on disk or in memory
+    const results = new Array(totalPages);
+    const pagesToProcess = [];
+    let completedCount = 0;
 
-        // Check if page is already cached in memory
-        if (pageMemoryCache.has(cacheKey)) {
-          console.log(`[Worker ${workerId}] Serving page ${pageNum}/${totalPages} from in-memory cache.`);
-          results[i] = pageMemoryCache.get(cacheKey);
-          completedCount++;
-          onProgress?.({
-            current: completedCount,
-            total: totalPages,
-            percent: Math.round((completedCount / totalPages) * 100),
-            message: `Page ${pageNum} retrieved from cache (${completedCount}/${totalPages} complete).`
-          });
-          continue;
-        }
-
-        console.log(`[Worker ${workerId}] Processing page ${pageNum}/${totalPages}...`);
-
-        // Extract single-page PDF in-memory (100% individual page attention)
-        const singlePageDoc = await PDFDocument.create();
-        const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
-        singlePageDoc.addPage(copiedPage);
-        const singlePageBytes = await singlePageDoc.save();
-        const singlePageBase64 = Buffer.from(singlePageBytes).toString('base64');
-
-        onProgress?.({
-          current: completedCount,
-          total: totalPages,
-          percent: Math.round((completedCount / totalPages) * 100),
-          message: `Transcribing page ${pageNum} of ${totalPages}...`
-        });
-
-        try {
-          const pageText = await callGeminiFlashWithPool(
-            'application/pdf',
-            singlePageBase64,
-            apiKeys,
-            pageNum,
-            totalPages,
-            onProgress
-          );
-
-          const formattedPage = `--- Page ${pageNum} ---\n\n${pageText}`;
-          results[i] = formattedPage;
-          pageMemoryCache.set(cacheKey, formattedPage);
-          completedCount++;
-
-          onProgress?.({
-            current: completedCount,
-            total: totalPages,
-            percent: Math.round((completedCount / totalPages) * 100),
-            message: `Page ${pageNum} completed (${completedCount}/${totalPages} finished).`
-          });
-        } catch (pageErr) {
-          console.error(`[Worker ${workerId}] Error transcribing page ${pageNum}:`, pageErr.message);
-          throw {
-            status: 500,
-            data: {
-              error: `Failed to transcribe page ${pageNum}: ${pageErr.message}`,
-              type: 'PAGE_ERROR'
-            }
-          };
-        }
+    for (let i = 0; i < totalPages; i++) {
+      const pageNum = i + 1;
+      const cacheKey = `${docSignature}_page_${pageNum}`;
+      const cached = getCachedPage(cacheKey);
+      if (cached) {
+        results[i] = cached;
+        completedCount++;
+      } else {
+        pagesToProcess.push(i);
       }
     }
 
-    // Launch worker pool
-    const workerPromises = [];
-    for (let w = 0; w < concurrency; w++) {
-      workerPromises.push(worker(w + 1));
+    if (completedCount > 0) {
+      console.log(`⚡ Instant Resume: ${completedCount}/${totalPages} pages restored from cache.`);
+      onProgress?.({
+        current: completedCount,
+        total: totalPages,
+        percent: Math.round((completedCount / totalPages) * 100),
+        message: `Restored ${completedCount} of ${totalPages} pages from cache. Resuming remaining ${pagesToProcess.length} page(s)...`
+      });
+    } else {
+      onProgress?.({
+        current: 0,
+        total: totalPages,
+        percent: 0,
+        message: `Starting parallel processing (${concurrency} workers active)...`
+      });
     }
 
-    await Promise.all(workerPromises);
+    // If all pages were already cached, skip straight to assembly
+    if (pagesToProcess.length > 0) {
+      console.log(`Processing remaining ${pagesToProcess.length} pages with concurrency = ${concurrency} across ${apiKeys.length} API keys...`);
+
+      let queueIndex = 0;
+
+      async function worker(workerId) {
+        while (queueIndex < pagesToProcess.length) {
+          const i = pagesToProcess[queueIndex++];
+          const pageNum = i + 1;
+          const cacheKey = `${docSignature}_page_${pageNum}`;
+
+          console.log(`[Worker ${workerId}] Processing page ${pageNum}/${totalPages}...`);
+
+          // Extract single-page PDF in-memory (100% individual page attention)
+          const singlePageDoc = await PDFDocument.create();
+          const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
+          singlePageDoc.addPage(copiedPage);
+          const singlePageBytes = await singlePageDoc.save();
+          const singlePageBase64 = Buffer.from(singlePageBytes).toString('base64');
+
+          onProgress?.({
+            current: completedCount,
+            total: totalPages,
+            percent: Math.round((completedCount / totalPages) * 100),
+            message: `Transcribing page ${pageNum} of ${totalPages}...`
+          });
+
+          try {
+            const pageText = await callGeminiFlashWithPool(
+              'application/pdf',
+              singlePageBase64,
+              apiKeys,
+              pageNum,
+              totalPages,
+              onProgress
+            );
+
+            const formattedPage = `--- Page ${pageNum} ---\n\n${pageText}`;
+            results[i] = formattedPage;
+            // Persist to both memory AND disk so failure never forces restart
+            saveCachedPage(cacheKey, formattedPage);
+            completedCount++;
+
+            onProgress?.({
+              current: completedCount,
+              total: totalPages,
+              percent: Math.round((completedCount / totalPages) * 100),
+              message: `Page ${pageNum} completed (${completedCount}/${totalPages} finished).`
+            });
+          } catch (pageErr) {
+            console.error(`[Worker ${workerId}] Error transcribing page ${pageNum}:`, pageErr.message);
+            throw {
+              status: 500,
+              data: {
+                error: `Failed to transcribe page ${pageNum}: ${pageErr.message}`,
+                type: 'PAGE_ERROR'
+              }
+            };
+          }
+        }
+      }
+
+      // Launch worker pool
+      const workerPromises = [];
+      for (let w = 0; w < Math.min(concurrency, pagesToProcess.length); w++) {
+        workerPromises.push(worker(w + 1));
+      }
+
+      await Promise.all(workerPromises);
+    }
 
     onProgress?.({
       current: totalPages,
@@ -502,6 +559,26 @@ export async function runGeminiOCR(body, onProgress) {
     // Single image processing
     console.log(`Processing single image (${mimeType})...`);
 
+    const imageSignature = `img_${buffer.length}_${buffer.subarray(0, 64).toString('hex')}`;
+    const cachedImage = getCachedPage(imageSignature);
+    if (cachedImage) {
+      console.log('Serving single image from cache.');
+      let formattedDocx = null;
+      try {
+        const docxBuffer = await createDocxBuffer('Transcribed Note', cachedImage);
+        formattedDocx = docxBuffer.toString('base64');
+      } catch (docxErr) {
+        console.warn('Docx generation warning:', docxErr.message);
+      }
+      return {
+        text: cachedImage,
+        formatted_pdf: null,
+        formatted_docx: formattedDocx,
+        total_pages: 1,
+        pages_processed: 1
+      };
+    }
+
     onProgress?.({
       current: 0,
       total: 1,
@@ -510,6 +587,7 @@ export async function runGeminiOCR(body, onProgress) {
     });
 
     const pageText = await callGeminiFlashWithPool(mimeType, rawData, apiKeys, 1, 1, onProgress);
+    saveCachedPage(imageSignature, pageText);
 
     onProgress?.({
       current: 1,

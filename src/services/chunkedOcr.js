@@ -281,43 +281,7 @@ function shouldFallbackToClient(error) {
  * @returns {Object} { text, formattedPdf, formattedDocx, totalPages, pagesProcessed, clientSide? }
  */
 export async function convertWithFallback(file, onProgress, externalSignal) {
-  try {
-    // Try server-side first
-    return await convertToFormattedDocumentChunked(file, onProgress, externalSignal);
-  } catch (serverError) {
-    // If cancelled by user, rethrow immediately without falling back to Tesseract
-    if (externalSignal?.aborted || serverError.name === 'AbortError') {
-      throw serverError;
-    }
-
-    console.warn('Server OCR failed, checking if fallback is appropriate:', serverError.message);
-
-    if (!shouldFallbackToClient(serverError)) {
-      // Auth errors, file too large, rate limits — don't fallback
-      throw serverError;
-    }
-
-    // Notify user about fallback
-    console.log('Falling back to client-side OCR (Tesseract.js)...');
-    onProgress?.({
-      current: 0,
-      total: 0,
-      percent: 0,
-      message: `⚡ Server unavailable — switching to browser-based OCR. This uses your device's processing power.`
-    });
-
-    try {
-      const result = await clientSideOcr(file, onProgress);
-      return result;
-    } catch (clientError) {
-      console.error('Client-side OCR also failed:', clientError);
-      // Throw the original server error with context about both failures
-      throw new Error(
-        `Server OCR failed (${serverError.message}). ` +
-        `Client-side fallback also failed (${clientError.message}). ` +
-        `Please try again later or with a smaller file.`
-      );
-    }
-  }
+  // Always use high-precision server-side OCR with persistent resume
+  return await convertToFormattedDocumentChunked(file, onProgress, externalSignal);
 }
 
