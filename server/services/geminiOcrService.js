@@ -1,16 +1,25 @@
 import { PDFDocument } from 'pdf-lib';
 import { createDocxBuffer } from './docxExportService.js';
 
-function getModelName() {
+function getModelChain() {
   const envModel = process.env.GEMINI_MODEL;
-  if (!envModel || envModel.includes('2.0-flash') || envModel.includes('1.5-flash')) {
-    return 'gemini-3.8-flash';
+  const models = [];
+  if (envModel && !envModel.includes('2.0-flash')) {
+    models.push(envModel);
   }
-  return envModel;
+  // Standard high-performance Flash fallback chain
+  models.push('gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash');
+  return [...new Set(models)];
 }
 
-const GEMINI_MODEL = getModelName();
+const MODEL_CHAIN = getModelChain();
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/**
+ * In-memory page cache to store completed page transcriptions.
+ * If a job is retried or interrupted, already completed pages are served instantly.
+ */
+const pageMemoryCache = new Map();
 
 /**
  * Strict academic prompt engineered for verbatim transcription,
@@ -37,7 +46,7 @@ Transcribe the provided document page into clean, publication-ready GitHub-flavo
      \\text{Step 2: } a_2 = 5
      $$
    - For multi-line aligned systems or derivations, format with clear vertical steps or \\begin{aligned} ... \\end{aligned} inside $$ ... $$.
-   - Use standard LaTeX symbols: \\times, \\cdot, \\frac{a}{b}, \\sum, \\int, \\in, \\subseteq, \\cup, \\cap, \\oplus, \\oplus, \\land, \\lor, \\neg.
+   - Use standard LaTeX symbols: \\times, \\cdot, \\frac{a}{b}, \\sum, \\int, \\in, \\subseteq, \\cup, \\cap, \\oplus, \\land, \\lor, \\neg.
 
 3. DIAGRAMS, FLOWCHARTS & TREES (ASCII ART):
    - When hand-drawn diagrams, trees, state machines, graphs, flowcharts, or Venn diagrams appear:
@@ -74,14 +83,12 @@ function getApiKeys() {
  * Extract retry delay in seconds from Google's response headers or error message
  */
 function parseRetryDelay(response, errJson) {
-  // 1. Try retry-after header
   const retryHeader = response.headers.get('retry-after');
   if (retryHeader) {
     const sec = parseInt(retryHeader, 10);
     if (!isNaN(sec) && sec > 0) return sec + 2;
   }
 
-  // 2. Try parsing message: "Please retry in 28.219388019s."
   const msg = errJson?.error?.message || '';
   const match = msg.match(/retry in ([\d.]+)s/i);
   if (match) {
@@ -89,12 +96,12 @@ function parseRetryDelay(response, errJson) {
     if (!isNaN(sec) && sec > 0) return Math.ceil(sec) + 2;
   }
 
-  // 3. Fallback default
   return 30;
 }
 
 /**
- * Call Gemini Flash API using multi-key round-robin pool with smart failover and auto-retry
+ * Call Gemini Flash API using multi-key round-robin pool with smart failover,
+ * automatic recovery from 503 High Demand spikes, and model fallback.
  * @param {string} mimeType - MIME type of the part
  * @param {string} base64Data - Base64 encoded file data
  * @param {string[]} apiKeys - Array of Gemini API keys
@@ -104,8 +111,9 @@ function parseRetryDelay(response, errJson) {
  * @returns {Promise<string>} - Transcribed markdown
  */
 async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, totalPages, onProgress) {
-  const maxAttempts = Math.max(apiKeys.length * 3, 6);
+  const maxAttempts = Math.max(apiKeys.length * 4, 10);
   let attempts = 0;
+  let modelIndex = 0;
 
   while (attempts < maxAttempts) {
     attempts++;
@@ -144,13 +152,12 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
       const waitSec = Math.max(1, Math.ceil(soonestWaitMs / 1000));
       console.log(`All ${apiKeys.length} Gemini API key(s) in cooldown. Waiting ${waitSec}s for quota window to reset...`);
 
-      // Stream live countdown to client (1-second tick)
       for (let sec = waitSec; sec > 0; sec--) {
         onProgress?.({
           current: Math.max(0, pageNum - 1),
           total: totalPages,
           percent: Math.round(((pageNum - 1) / totalPages) * 100),
-          message: `⏳ Rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
+          message: `⏳ Free-tier rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
         });
         await new Promise(r => setTimeout(r, 1000));
       }
@@ -159,8 +166,9 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
       keyCooldowns.delete(soonestKey);
     }
 
-    // 3. Make the API request with the selected key
-    const url = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${selectedKey}`;
+    // 3. Make the API request with the selected key and active model
+    const currentModel = MODEL_CHAIN[modelIndex % MODEL_CHAIN.length];
+    const url = `${GEMINI_API_URL}/${currentModel}:generateContent?key=${selectedKey}`;
     const requestBody = {
       contents: [
         {
@@ -194,7 +202,7 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
         body: JSON.stringify(requestBody)
       });
     } catch (fetchErr) {
-      console.warn(`Network error with key #${selectedKeyNumber}:`, fetchErr.message);
+      console.warn(`Network glitch with key #${selectedKeyNumber} on page ${pageNum}:`, fetchErr.message);
       await new Promise(r => setTimeout(r, 2000));
       continue;
     }
@@ -206,7 +214,7 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
         errJson = await response.json();
         errorDetail = errJson.error?.message || errorDetail;
       } catch {
-        // ignore JSON parse error
+        // ignore parse error
       }
 
       // Handle HTTP 429 Rate Limit with Smart Key Failover
@@ -216,7 +224,6 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
         console.warn(`⚠️ Key #${selectedKeyNumber} hit rate limit (429). Cooldown: ${cooldownSec}s.`);
 
         if (apiKeys.length > 1) {
-          // Immediately try the next key in the pool!
           console.log(`Rotating to next available API key for page ${pageNum}...`);
           onProgress?.({
             current: Math.max(0, pageNum - 1),
@@ -226,19 +233,49 @@ async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, t
           });
           continue;
         } else {
-          // Single key: countdown wait
           for (let sec = cooldownSec; sec > 0; sec--) {
             onProgress?.({
               current: Math.max(0, pageNum - 1),
               total: totalPages,
               percent: Math.round(((pageNum - 1) / totalPages) * 100),
-              message: `⏳ Free-tier rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
+              message: `⏳ Rate limit reached. Resuming page ${pageNum} of ${totalPages} in ${sec}s...`
             });
             await new Promise(r => setTimeout(r, 1000));
           }
           keyCooldowns.delete(selectedKey);
           continue;
         }
+      }
+
+      // Handle HTTP 503 (High Demand), 500, 502, 504 - Transient Server Spikes from Google
+      const isTransientServerError = [500, 502, 503, 504].includes(response.status) ||
+        errorDetail.toLowerCase().includes('high demand') ||
+        errorDetail.toLowerCase().includes('temporarily unavailable') ||
+        errorDetail.toLowerCase().includes('try again later');
+
+      if (isTransientServerError) {
+        const isHighDemand = response.status === 503 || errorDetail.toLowerCase().includes('high demand');
+        console.warn(`⚠️ Gemini ${isHighDemand ? 'high demand spike (503)' : `server error (${response.status})`} on page ${pageNum} [attempt ${attempts}/${maxAttempts}]: ${errorDetail}`);
+
+        // If the current model is persistently congested after 2 attempts, fall back to next model
+        if (isHighDemand && attempts >= 2 && MODEL_CHAIN.length > 1) {
+          modelIndex = (modelIndex + 1) % MODEL_CHAIN.length;
+          console.log(`Switching to alternate Flash model (${MODEL_CHAIN[modelIndex]}) for page ${pageNum}...`);
+        }
+
+        const backoffSec = Math.min(2 * attempts + 1, 12);
+        for (let sec = backoffSec; sec > 0; sec--) {
+          onProgress?.({
+            current: Math.max(0, pageNum - 1),
+            total: totalPages,
+            percent: Math.round(((pageNum - 1) / totalPages) * 100),
+            message: `⏳ Google servers busy on Page ${pageNum} (${isHighDemand ? 'high demand spike' : 'temporary error'}). Retrying in ${sec}s...`
+          });
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // Rotate to another key and retry seamlessly
+        continue;
       }
 
       if (response.status === 400) {
@@ -280,7 +317,7 @@ function cleanMarkdownOutput(raw) {
 }
 
 /**
- * Main chunked Gemini OCR processing function with progress reporting
+ * Main chunked Gemini OCR processing function with parallel multi-key worker pool
  * @param {Object} body - Request body containing document payload
  * @param {Function} onProgress - Progress callback function (current, total, percent, message)
  * @returns {Promise<Object>} - Formatted result with text, docx, page counts
@@ -327,8 +364,6 @@ export async function runGeminiOCR(body, onProgress) {
   const buffer = Buffer.from(rawData, 'base64');
   const isPdf = mimeType === 'application/pdf' || buffer.subarray(0, 4).toString() === '%PDF';
 
-  const transcribedPages = [];
-
   if (isPdf) {
     console.log('Loading PDF document with pdf-lib...');
     let pdfDoc;
@@ -351,68 +386,114 @@ export async function runGeminiOCR(body, onProgress) {
       };
     }
 
+    // Determine concurrency based on available API keys (default: 3 concurrent workers)
+    const concurrency = Math.min(
+      Math.max(1, apiKeys.length),
+      parseInt(process.env.OCR_CONCURRENCY || '3', 10)
+    );
+
+    console.log(`Processing ${totalPages} pages with concurrency = ${concurrency} across ${apiKeys.length} API keys...`);
+
     onProgress?.({
       current: 0,
       total: totalPages,
       percent: 0,
-      message: `Starting Gemini Flash OCR for ${totalPages} page(s)...`
+      message: `Starting parallel Gemini Flash OCR (${concurrency} workers active)...`
     });
 
-    for (let i = 0; i < totalPages; i++) {
-      const pageNum = i + 1;
-      const progressPercent = Math.round((i / totalPages) * 100);
+    const results = new Array(totalPages);
+    let completedCount = 0;
+    let nextIndex = 0;
 
-      onProgress?.({
-        current: i,
-        total: totalPages,
-        percent: progressPercent,
-        message: `Transcribing page ${pageNum} of ${totalPages} with Gemini Flash...`
-      });
+    // Cache namespace based on document buffer signature
+    const docSignature = `${buffer.length}_${buffer.subarray(0, 64).toString('hex')}`;
 
-      console.log(`Processing page ${pageNum}/${totalPages}...`);
+    async function worker(workerId) {
+      while (nextIndex < totalPages) {
+        const i = nextIndex++;
+        const pageNum = i + 1;
+        const cacheKey = `${docSignature}_page_${pageNum}`;
 
-      // Extract single-page PDF in-memory (100% individual page attention)
-      const singlePageDoc = await PDFDocument.create();
-      const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
-      singlePageDoc.addPage(copiedPage);
-      const singlePageBytes = await singlePageDoc.save();
-      const singlePageBase64 = Buffer.from(singlePageBytes).toString('base64');
+        // Check if page is already cached in memory
+        if (pageMemoryCache.has(cacheKey)) {
+          console.log(`[Worker ${workerId}] Serving page ${pageNum}/${totalPages} from in-memory cache.`);
+          results[i] = pageMemoryCache.get(cacheKey);
+          completedCount++;
+          onProgress?.({
+            current: completedCount,
+            total: totalPages,
+            percent: Math.round((completedCount / totalPages) * 100),
+            message: `Page ${pageNum} retrieved from cache (${completedCount}/${totalPages} complete).`
+          });
+          continue;
+        }
 
-      try {
-        const pageText = await callGeminiFlashWithPool('application/pdf', singlePageBase64, apiKeys, pageNum, totalPages, onProgress);
-        transcribedPages.push(`--- Page ${pageNum} ---\n\n${pageText}`);
-      } catch (pageErr) {
-        console.error(`Error transcribing page ${pageNum}:`, pageErr.message);
-        throw {
-          status: 500,
-          data: {
-            error: `Failed to transcribe page ${pageNum}: ${pageErr.message}`,
-            type: 'GEMINI_PAGE_ERROR'
-          }
-        };
-      }
+        console.log(`[Worker ${workerId}] Processing page ${pageNum}/${totalPages}...`);
 
-      onProgress?.({
-        current: pageNum,
-        total: totalPages,
-        percent: Math.round((pageNum / totalPages) * 100),
-        message: `Page ${pageNum} transcribed successfully.`
-      });
+        // Extract single-page PDF in-memory (100% individual page attention)
+        const singlePageDoc = await PDFDocument.create();
+        const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
+        singlePageDoc.addPage(copiedPage);
+        const singlePageBytes = await singlePageDoc.save();
+        const singlePageBase64 = Buffer.from(singlePageBytes).toString('base64');
 
-      // Gentle pause (1 second) between pages to keep network flow smooth
-      if (i < totalPages - 1) {
-        await new Promise(r => setTimeout(r, 1000));
+        onProgress?.({
+          current: completedCount,
+          total: totalPages,
+          percent: Math.round((completedCount / totalPages) * 100),
+          message: `Transcribing page ${pageNum} of ${totalPages} (${concurrency} pages running in parallel)...`
+        });
+
+        try {
+          const pageText = await callGeminiFlashWithPool(
+            'application/pdf',
+            singlePageBase64,
+            apiKeys,
+            pageNum,
+            totalPages,
+            onProgress
+          );
+
+          const formattedPage = `--- Page ${pageNum} ---\n\n${pageText}`;
+          results[i] = formattedPage;
+          pageMemoryCache.set(cacheKey, formattedPage);
+          completedCount++;
+
+          onProgress?.({
+            current: completedCount,
+            total: totalPages,
+            percent: Math.round((completedCount / totalPages) * 100),
+            message: `Page ${pageNum} completed (${completedCount}/${totalPages} finished).`
+          });
+        } catch (pageErr) {
+          console.error(`[Worker ${workerId}] Error transcribing page ${pageNum}:`, pageErr.message);
+          throw {
+            status: 500,
+            data: {
+              error: `Failed to transcribe page ${pageNum}: ${pageErr.message}`,
+              type: 'GEMINI_PAGE_ERROR'
+            }
+          };
+        }
       }
     }
+
+    // Launch worker pool
+    const workerPromises = [];
+    for (let w = 0; w < concurrency; w++) {
+      workerPromises.push(worker(w + 1));
+    }
+
+    await Promise.all(workerPromises);
 
     onProgress?.({
       current: totalPages,
       total: totalPages,
       percent: 100,
-      message: 'Generating formatted Word document...'
+      message: 'Assembling document & generating formatted Word document...'
     });
 
-    const fullMarkdown = transcribedPages.join('\n\n');
+    const fullMarkdown = results.join('\n\n');
 
     // Generate formatted Word document (DOCX)
     let formattedDocx = null;
@@ -448,12 +529,12 @@ export async function runGeminiOCR(body, onProgress) {
       current: 1,
       total: 1,
       percent: 85,
-      message: 'Generating formatted Word document...'
+      message: 'Formatting document...'
     });
 
     let formattedDocx = null;
     try {
-      const docxBuffer = await createDocxBuffer('Transcribed Notes', pageText);
+      const docxBuffer = await createDocxBuffer('Transcribed Note', pageText);
       formattedDocx = docxBuffer.toString('base64');
     } catch (docxErr) {
       console.warn('Docx generation warning (non-fatal):', docxErr.message);

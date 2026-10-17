@@ -64,7 +64,11 @@ export function ChunkedProgressBar({ progress }) {
               <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-blue-600 shrink-0" />
               <span className="font-medium text-gray-700">
                 {safeTotal > 0 ? (
-                  <>Processing page <span className="text-blue-600 font-bold">{safeCurrent}</span> of {safeTotal}</>
+                  safeCurrent > 0 ? (
+                    <>Completed <span className="text-blue-600 font-bold">{safeCurrent}</span> of {safeTotal} pages</>
+                  ) : (
+                    <>Processing <span className="text-blue-600 font-bold">{safeTotal}</span> pages in parallel...</>
+                  )
                 ) : (
                   'Initializing...'
                 )}
@@ -86,7 +90,7 @@ export function ChunkedProgressBar({ progress }) {
       {message && (
         <div className={cn(
           "text-[11px] sm:text-xs px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl border transition-all duration-300 font-medium flex items-center gap-2 break-words leading-relaxed",
-          message.includes('Resuming') || message.includes('limit') || message.includes('quota') || message.includes('⏳')
+          message.includes('Resuming') || message.includes('limit') || message.includes('quota') || message.includes('⏳') || message.includes('busy') || message.includes('demand')
             ? "bg-amber-50 text-amber-900 border-amber-300 shadow-sm"
             : "text-gray-600 bg-gray-50 border-gray-200"
         )}>
