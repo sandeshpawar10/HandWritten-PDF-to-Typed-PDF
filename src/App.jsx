@@ -117,11 +117,12 @@ export default function App() {
         progressMessage: undefined
       } : j));
 
-      if (result.formattedPdf) {
+      if (result.formattedPdf || result.formattedDocx) {
         setFormattedDocument({
           pdf: result.formattedPdf,
           docx: result.formattedDocx,
-          filename: job.file.name
+          filename: job.file.name,
+          content: result.text
         });
       }
 
@@ -547,6 +548,7 @@ export default function App() {
         <FormattedDocumentViewer
           formattedPdf={formattedDocument.pdf}
           formattedDocx={formattedDocument.docx}
+          content={formattedDocument.content}
           filename={formattedDocument.filename}
           onClose={() => setFormattedDocument(null)}
         />

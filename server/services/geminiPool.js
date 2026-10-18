@@ -1,14 +1,15 @@
 /**
- * geminiPool.js
- * Paced, self-healing Gemini client for page-by-page OCR.
+ * server/services/geminiPool.js
+ * Paced, quota-aware multi-key and multi-model scheduler for Gemini OCR.
  *
- * Design rules:
- *  1. PACE proactively (per-key RPM budget) instead of reacting to 429s.
- *  2. Slot reservation is synchronous -> no thundering herd when keys come back.
- *  3. 429  = key/quota problem  -> block THAT key for the exact time Google says.
- *     503  = model overload     -> back off with jitter, fall back to next model.
- *  4. Never silently accept a truncated page (finishReason / continuation / validation).
- *  5. Retry budget is a TIME deadline per page, not an attempt counter eaten by 429s.
+ * Capabilities:
+ *  1. Supports named keys (GEMINI_KEY_01...) and comma-separated GEMINI_API_KEY.
+ *  2. Unblocks full 6-key concurrency: 1 in-flight request per key, dynamically acquired.
+ *  3. Independent health/quota state per (key, model) pair.
+ *  4. Never wipes out all key blocks on model switch.
+ *  5. Configurable model tiers: PRIMARY, FAST, VERIFY, FALLBACK.
+ *  6. Telemetry tracking per-key dispatch, 429s, latency, and success rates.
+ *  7. Masked key logging for security.
  */
 
 const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -22,16 +23,24 @@ const num = (name, def) => {
   return Number.isFinite(n) ? n : def;
 };
 
-// Priority fallback list of active 3.x models
+// Configurable model tiers
+export const MODEL_TIERS = {
+  primary: env('GEMINI_MODEL_PRIMARY', env('GEMINI_MODEL', 'gemini-3.8-flash')),
+  fast: env('GEMINI_MODEL_FAST', 'gemini-3.5-flash'),
+  verify: env('GEMINI_MODEL_VERIFY', env('GEMINI_MODEL', 'gemini-3.8-flash')),
+  fallback: env('GEMINI_MODEL_FALLBACK', 'gemini-3.5-flash-lite')
+};
+
+// Priority fallback candidate list
 const CANDIDATE_MODELS = [
-  env('GEMINI_MODEL', 'gemini-3.8-flash'),
-  env('GEMINI_FALLBACK_MODEL', 'gemini-3.5-flash-lite'),
-  'gemini-3.5-flash',
+  MODEL_TIERS.primary,
+  MODEL_TIERS.fast,
+  MODEL_TIERS.fallback,
   'gemini-3.1-flash-lite'
 ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
-const RPM_PER_KEY = num('GEMINI_RPM_PER_KEY', 5); // Safe 5 RPM per key (~12s between calls per key)
-const MAX_IN_FLIGHT = num('GEMINI_MAX_IN_FLIGHT_PER_KEY', 1);
+const RPM_PER_KEY = num('GEMINI_RPM_PER_KEY', 5); // Safe 5 RPM per key (~12s spacing)
+const MAX_IN_FLIGHT_PER_KEY = num('GEMINI_MAX_IN_FLIGHT_PER_KEY', 1);
 const MAX_OUTPUT_TOKENS = num('GEMINI_MAX_OUTPUT_TOKENS', 8192);
 const REQUEST_TIMEOUT_MS = num('GEMINI_REQUEST_TIMEOUT_MS', 180000);
 const PAGE_DEADLINE_MS = num('GEMINI_PAGE_DEADLINE_MS', 15 * 60 * 1000);
@@ -43,6 +52,12 @@ export class OcrError extends Error {
     super(message);
     this.code = code;
   }
+}
+
+/** Helper to mask sensitive keys in logs (shows only last 4 chars) */
+export function maskKey(key) {
+  if (!key || typeof key !== 'string') return '****';
+  return `***${key.slice(-4)}`;
 }
 
 const sleep = (ms, signal) =>
@@ -66,7 +81,7 @@ const timeoutSignal = (s) => {
         ? AbortSignal.any([s, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
         : AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     } catch {
-      // Fall through to manual controller if AbortSignal.any throws
+      // fallback
     }
   }
   const ctrl = new AbortController();
@@ -86,12 +101,11 @@ const timeoutSignal = (s) => {
 };
 
 function backoffMs(n) {
-  const base = Math.min(60000, 2000 * 2 ** (n - 1)); // 2s,4s,8s,... cap 60s
-  return base / 2 + Math.random() * (base / 2); // jitter
+  const base = Math.min(60000, 2000 * 2 ** (n - 1));
+  return base / 2 + Math.random() * (base / 2);
 }
 
 function msUntilPacificMidnight() {
-  // Gemini daily quotas reset at midnight Pacific time
   const now = new Date();
   const la = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
   const next = new Date(la);
@@ -99,7 +113,7 @@ function msUntilPacificMidnight() {
   return Math.max(60000, next - la);
 }
 
-/** Read Retry-After / RetryInfo / QuotaFailure so we know HOW LONG and WHICH quota. */
+/** Parse Retry-After / RetryInfo / QuotaFailure from response */
 function parseQuota(res, errJson) {
   let retrySec = null;
   let scope = 'minute';
@@ -126,6 +140,9 @@ function parseQuota(res, errJson) {
   return { retrySec: Math.ceil(retrySec ?? 30), scope };
 }
 
+/**
+ * KeyPool manages pacing and quota states per (key, model) pair.
+ */
 class KeyPool {
   constructor(keys) {
     this.baseIntervalMs = Math.ceil(60000 / RPM_PER_KEY);
@@ -133,70 +150,105 @@ class KeyPool {
     this.slots = keys.map((key, i) => ({
       key,
       id: i + 1,
+      masked: maskKey(key),
       nextAt: 0,
-      blockedUntil: 0,
       inFlight: 0,
-      reason: ''
+      // Map of modelId -> { blockedUntil: number, reason: string }
+      modelBlocks: new Map(),
+      // Telemetry
+      stats: {
+        dispatched: 0,
+        succeeded: 0,
+        rateLimited429: 0,
+        totalLatencyMs: 0
+      }
     }));
   }
 
-  availableAt(s) {
-    return Math.max(s.nextAt, s.blockedUntil);
+  isKeyBlockedForModel(slot, model, now) {
+    const block = slot.modelBlocks.get(model);
+    return Boolean(block && block.blockedUntil > now);
   }
 
-  /** Resolves with a key slot that is allowed to send a request right now. */
-  async acquire(signal, onWait) {
+  availableAtForModel(slot, model) {
+    const block = slot.modelBlocks.get(model);
+    const blockedUntil = block ? block.blockedUntil : 0;
+    return Math.max(slot.nextAt, blockedUntil);
+  }
+
+  /**
+   * Acquire a slot for a given model tier.
+   */
+  async acquire(model, signal, onWait) {
     for (;;) {
+      if (signal?.aborted) throw new OcrError('Aborted', 'ABORTED');
       const now = Date.now();
 
-      // Check if all keys are blocked beyond max wait time
-      const allBlockedLong = this.slots.every((s) => s.blockedUntil - now > MAX_QUEUE_WAIT_MS);
+      // Check if all slots are blocked long-term on this model
+      const allBlockedLong = this.slots.every((s) => {
+        const block = s.modelBlocks.get(model);
+        return block && block.blockedUntil - now > MAX_QUEUE_WAIT_MS;
+      });
       if (allBlockedLong) {
-        return null; // Signals to caller that all keys are blocked long-term
+        return null; // Signals need to fall back to next model tier
       }
 
       let best = null;
       for (const s of this.slots) {
-        if (s.inFlight >= MAX_IN_FLIGHT) continue;
-        if (!best || this.availableAt(s) < this.availableAt(best)) best = s;
+        if (s.inFlight >= MAX_IN_FLIGHT_PER_KEY) continue;
+        if (!best || this.availableAtForModel(s, model) < this.availableAtForModel(best, model)) {
+          best = s;
+        }
       }
 
-      if (best && this.availableAt(best) <= now) {
-        // Reserve synchronously: only ONE waiter can win this slot -> no stampede.
+      if (best && this.availableAtForModel(best, model) <= now) {
         best.inFlight++;
         best.nextAt = now + this.intervalMs;
+        best.stats.dispatched++;
         return best;
       }
 
-      const wait = best ? this.availableAt(best) - now : 500;
+      const wait = best ? this.availableAtForModel(best, model) - now : 500;
       onWait?.(Math.ceil(wait / 1000));
       await sleep(Math.min(Math.max(wait, 250), 2000) + Math.random() * 250, signal);
     }
   }
 
-  release(slot) {
+  release(slot, latencyMs = 0, success = true) {
     slot.inFlight = Math.max(0, slot.inFlight - 1);
-  }
-
-  block(slot, ms, reason) {
-    slot.blockedUntil = Math.max(slot.blockedUntil, Date.now() + ms);
-    slot.reason = reason;
-  }
-
-  resetAllBlocks() {
-    this.intervalMs = this.baseIntervalMs;
-    for (const s of this.slots) {
-      s.blockedUntil = 0;
-      s.reason = '';
+    if (latencyMs > 0) {
+      slot.stats.totalLatencyMs += latencyMs;
+    }
+    if (success) {
+      slot.stats.succeeded++;
+      this.intervalMs = Math.max(this.baseIntervalMs, this.intervalMs * 0.97);
     }
   }
 
-  // Adaptive pacing: a 429 despite pacing means our RPM setting is too optimistic.
+  block(slot, model, ms, reason) {
+    slot.stats.rateLimited429++;
+    slot.modelBlocks.set(model, {
+      blockedUntil: Math.max(slot.modelBlocks.get(model)?.blockedUntil || 0, Date.now() + ms),
+      reason
+    });
+  }
+
   slowDown() {
     this.intervalMs = Math.min(60000, this.intervalMs * 1.3);
   }
-  reportSuccess() {
-    this.intervalMs = Math.max(this.baseIntervalMs, this.intervalMs * 0.97);
+
+  getTelemetry() {
+    return this.slots.map(s => ({
+      slotId: s.id,
+      maskedKey: s.masked,
+      inFlight: s.inFlight,
+      dispatched: s.stats.dispatched,
+      succeeded: s.stats.succeeded,
+      rateLimited429: s.stats.rateLimited429,
+      avgLatencyMs: s.stats.dispatched > 0
+        ? Math.round(s.stats.totalLatencyMs / Math.max(1, s.stats.succeeded))
+        : 0
+    }));
   }
 }
 
@@ -211,6 +263,10 @@ export function getPool(keys) {
   return pool;
 }
 
+export function getPoolTelemetry() {
+  return pool ? pool.getTelemetry() : [];
+}
+
 function buildGenConfig() {
   const g = { temperature: 0.1, maxOutputTokens: MAX_OUTPUT_TOKENS };
   const think = process.env.GEMINI_THINKING_BUDGET;
@@ -220,7 +276,6 @@ function buildGenConfig() {
   return g;
 }
 
-/** Truncation and corruption detectors for LaTeX and diagrams. */
 function checkCompleteness(text) {
   const problems = [];
   const fences = (text.match(/^```/gm) || []).length;
@@ -271,30 +326,31 @@ export async function transcribePage({
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new OcrError('Aborted', 'ABORTED');
 
-    const slot = await keyPool.acquire(signal, (sec) =>
+    const slot = await keyPool.acquire(model, signal, (sec) =>
       onStatus?.(`Page ${pageNum}: waiting for an available API key slot (~${sec}s)...`)
     );
 
-    // If all keys are blocked (e.g. daily quota exhausted), attempt model fallback
+    // If all keys blocked on this model, move to next model tier WITHOUT wiping other blocks!
     if (!slot) {
       if (modelIndex < CANDIDATE_MODELS.length - 1) {
         modelIndex++;
         const prevModel = model;
         model = CANDIDATE_MODELS[modelIndex];
-        keyPool.resetAllBlocks();
-        console.warn(`[enginePool] All keys blocked on ${prevModel}. Switching page ${pageNum} to fallback model ${model}`);
-        onStatus?.(`Daily limit reached on primary engine. Switching to backup engine...`);
+        console.warn(`[enginePool] Keys blocked on ${prevModel}. Switching page ${pageNum} to model tier: ${model}`);
+        onStatus?.(`Primary engine busy. Routing to next model tier (${model})...`);
         await sleep(1000, signal);
         continue;
       }
       throw new OcrError(
-        'All API keys have exhausted their daily quota across all candidate models. Saved pages are preserved. Quota resets at midnight Pacific Time.',
+        'All API keys have exhausted quota across all candidate models. Saved pages are preserved.',
         'QUOTA_EXHAUSTED'
       );
     }
 
     let res;
     let body;
+    const reqStart = Date.now();
+
     try {
       res = await fetch(`${API_URL}/${model}:generateContent`, {
         method: 'POST',
@@ -304,14 +360,15 @@ export async function transcribePage({
       });
       body = await res.json().catch(() => null);
     } catch (err) {
-      keyPool.release(slot);
+      keyPool.release(slot, Date.now() - reqStart, false);
       if (signal?.aborted) throw new OcrError('Aborted', 'ABORTED');
       transient++;
-      console.warn(`Network error (key #${slot.id}, page ${pageNum}): ${err.message}`);
+      console.warn(`Network error (key #${slot.id} [${slot.masked}], page ${pageNum}): ${err.message}`);
       await sleep(backoffMs(transient), signal);
       continue;
     }
-    keyPool.release(slot);
+
+    const latencyMs = Date.now() - reqStart;
 
     if (!res.ok) {
       const detail = body?.error?.message || `HTTP ${res.status}`;
@@ -319,33 +376,35 @@ export async function transcribePage({
       if (res.status === 429) {
         const { retrySec, scope } = parseQuota(res, body);
         const ms = scope === 'day' ? msUntilPacificMidnight() : (retrySec + 1) * 1000;
-        keyPool.block(slot, ms, `429/${scope}`);
+        // Block THIS key for THIS model only
+        keyPool.block(slot, model, ms, `429/${scope}`);
+        keyPool.release(slot, latencyMs, false);
+
         if (scope === 'minute') {
           keyPool.slowDown();
         }
         console.warn(
-          `Key #${slot.id} 429 (${scope} quota) on ${model}: ${detail}. Blocked ${Math.round(ms / 1000)}s. ` +
-            `Pacing now ${Math.round(keyPool.intervalMs / 1000)}s/request/key.`
+          `Key #${slot.id} [${slot.masked}] 429 (${scope}) on ${model}: ${detail}. Blocked ${Math.round(ms / 1000)}s.`
         );
 
-        // If this key hit daily quota and we have fallback models, check if all slots are blocked
+        // Check if all slots are blocked on current model
         const now = Date.now();
-        const allBlocked = keyPool.slots.every((s) => s.blockedUntil - now > 5000);
+        const allBlocked = keyPool.slots.every((s) => keyPool.isKeyBlockedForModel(s, model, now));
         if (allBlocked && modelIndex < CANDIDATE_MODELS.length - 1) {
           modelIndex++;
-          const prevModel = model;
           model = CANDIDATE_MODELS[modelIndex];
-          keyPool.resetAllBlocks();
-          console.warn(`[enginePool] Switching to fallback model ${model} for page ${pageNum}`);
-          onStatus?.(`Quota limit reached on primary engine. Switching to backup engine...`);
+          console.warn(`[enginePool] Switching page ${pageNum} to model tier: ${model}`);
+          onStatus?.(`Engine quota reached. Switching to ${model}...`);
           await sleep(1000, signal);
         }
         continue;
       }
 
+      keyPool.release(slot, latencyMs, false);
+
       if (res.status === 401 || res.status === 403) {
-        keyPool.block(slot, 6 * 3600 * 1000, `auth ${res.status}`);
-        console.error(`Key #${slot.id} rejected (${res.status}): ${detail}. Disabled for 6h.`);
+        keyPool.block(slot, model, 6 * 3600 * 1000, `auth ${res.status}`);
+        console.error(`Key #${slot.id} [${slot.masked}] auth failure (${res.status}): ${detail}.`);
         continue;
       }
 
@@ -353,9 +412,8 @@ export async function transcribePage({
         transient++;
         if (modelIndex < CANDIDATE_MODELS.length - 1 && transient >= 3) {
           modelIndex++;
-          console.warn(`Switching page ${pageNum} to fallback model ${CANDIDATE_MODELS[modelIndex]} due to server busy (${res.status})`);
           model = CANDIDATE_MODELS[modelIndex];
-          keyPool.resetAllBlocks();
+          console.warn(`Switching page ${pageNum} to model tier ${model} due to upstream ${res.status}`);
         }
         const wait = backoffMs(transient);
         onStatus?.(`Page ${pageNum}: high demand (${res.status}), retrying in ${Math.round(wait / 1000)}s...`);
@@ -365,6 +423,8 @@ export async function transcribePage({
 
       throw new OcrError(`Transcription API error: ${detail}`, 'API_ERROR');
     }
+
+    keyPool.release(slot, latencyMs, true);
 
     const cand = body?.candidates?.[0];
     const text = (cand?.content?.parts || []).map((p) => p.text || '').join('');
@@ -378,9 +438,6 @@ export async function transcribePage({
       continue;
     }
 
-    keyPool.reportSuccess();
-
-    // SAFETY / RECITATION => output is blocked, retry
     if (finish && finish !== 'STOP' && finish !== 'MAX_TOKENS') {
       if (++bad > 3) throw new OcrError(`Blocked response (finishReason=${finish})`, 'BLOCKED');
       assembled = '';
@@ -391,10 +448,9 @@ export async function transcribePage({
 
     assembled += text;
 
-    // Output hit the token ceiling -> ask the model to continue instead of losing the tail!
     if (finish === 'MAX_TOKENS') {
       if (++continuations > MAX_CONTINUATIONS) {
-        console.warn(`Page ${pageNum} hit max continuations limit, preserving assembled text.`);
+        console.warn(`Page ${pageNum} reached continuation limit.`);
         return { text: cleanMarkdown(assembled), warnings: ['max_continuations_reached'], model };
       }
       console.warn(`Page ${pageNum} hit MAX_TOKENS, requesting continuation #${continuations}...`);
@@ -416,7 +472,6 @@ export async function transcribePage({
       continue;
     }
 
-    // Completeness validation: check for broken $$ math blocks or unclosed code fences
     const problems = checkCompleteness(assembled);
     if (problems.length && invalid < 1) {
       invalid++;
@@ -429,5 +484,5 @@ export async function transcribePage({
     return { text: cleanMarkdown(assembled), warnings: problems, model };
   }
 
-  throw new OcrError(`Page ${pageNum} not completed within the deadline`, 'PAGE_DEADLINE');
+  throw new OcrError(`Page ${pageNum} not completed within deadline`, 'PAGE_DEADLINE');
 }

@@ -6,25 +6,24 @@ const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "ai-studio-applet
 
 // Initialize Firebase Admin with service account if available
 // Falls back to public key verification if service account not provided
-let app;
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    app = initializeApp({
+    initializeApp({
       credential: cert(serviceAccount)
     });
     console.log('✓ Firebase Admin initialized with service account');
   } catch (error) {
     console.error('✗ Failed to parse FIREBASE_SERVICE_ACCOUNT:', error.message);
     console.log('  Falling back to public key verification');
-    app = initializeApp({
+    initializeApp({
       projectId: FIREBASE_PROJECT_ID
     });
   }
 } else {
   console.warn('⚠️  FIREBASE_SERVICE_ACCOUNT not set. Using public key verification (may have intermittent failures).');
   console.warn(`    Using Firebase Project ID: ${FIREBASE_PROJECT_ID}`);
-  app = initializeApp({
+  initializeApp({
     projectId: FIREBASE_PROJECT_ID
   });
 }

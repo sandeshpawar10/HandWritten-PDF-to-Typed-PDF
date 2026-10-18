@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Save, ArrowLeft, Loader2, Check, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles, Menu, X } from 'lucide-react';
+import PropTypes from 'prop-types';
+import { Save, ArrowLeft, Loader2, Check, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles, Menu, X, Columns } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { updateDocument, saveVersion } from '../services/documents';
 import { exportToDocx, exportToPdf, exportToTxt } from '../services/export';
@@ -106,17 +107,26 @@ export function Editor({ doc, onBack, versions }) {
     }
   }, [content, title, doc.id, doc.userId, isSaving]);
 
-  // Auto-save: debounced 5s after last edit
-  // Fixed memory leak by removing handleSave from dependencies
+  // Keyboard shortcut Ctrl+S / Cmd+S for explicit save
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSave]);
+
+  // Auto-save: debounced 5s after last edit (draft only, no Firestore version spam)
   useEffect(() => {
     if (!isDirty || isSaving) return;
 
-    // Clear existing timeout
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // Set new timeout
     saveTimeoutRef.current = setTimeout(async () => {
       if (!isSaving && isDirty) {
         setIsSaving(true);
@@ -124,7 +134,6 @@ export function Editor({ doc, onBack, versions }) {
 
         try {
           await updateDocument(doc.id, { content, title });
-          await saveVersion(doc.id, doc.userId, content, 'Auto-save');
           setLastSaved(new Date());
           setIsDirty(false);
         } catch (error) {
@@ -136,13 +145,12 @@ export function Editor({ doc, onBack, versions }) {
       }
     }, 5000);
 
-    // Cleanup
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [content, title, isDirty, isSaving, doc.id, doc.userId]);
+  }, [content, title, isDirty, isSaving, doc.id]);
 
   const handleExport = async (format) => {
     setIsExporting(format);
@@ -336,6 +344,11 @@ export function Editor({ doc, onBack, versions }) {
                   mode === 'edit' ? "bg-[#8B5E3C]/10 text-[#8B5E3C]" : "text-[#8C7B6B] hover:text-[#3D2E1C]")}>
                 <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />Edit
               </button>
+              <button onClick={() => setMode('split')}
+                className={cn("hidden md:flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-300",
+                  mode === 'split' ? "bg-[#8B5E3C]/10 text-[#8B5E3C]" : "text-[#8C7B6B] hover:text-[#3D2E1C]")}>
+                <Columns className="w-3.5 h-3.5 sm:w-4 sm:h-4" />Split
+              </button>
             </div>
 
             <button onClick={handleSave} disabled={isSaving || !isDirty}
@@ -354,10 +367,32 @@ export function Editor({ doc, onBack, versions }) {
         {/* Paper Canvas */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-12 flex justify-center items-start scroll-smooth">
           <motion.div layout initial={{y:40, opacity:0}} animate={{y:0, opacity:1}}
-            className="w-full max-w-[850px] min-h-[600px] sm:min-h-[1100px] rounded-2xl sm:rounded-[1rem] shadow-[0_4px_20px_rgba(139,94,60,0.08)] relative overflow-hidden group bg-white border-t-4 border-t-[#8B5E3C] border-x border-b border-[#E8DFD0]">
+            className={cn("w-full min-h-[600px] sm:min-h-[1100px] rounded-2xl sm:rounded-[1rem] shadow-[0_4px_20px_rgba(139,94,60,0.08)] relative overflow-hidden group bg-white border-t-4 border-t-[#8B5E3C] border-x border-b border-[#E8DFD0]",
+              mode === 'split' ? "max-w-[1400px]" : "max-w-[850px]"
+            )}>
             
             <AnimatePresence mode="wait">
-              {mode === 'edit' ? (
+              {mode === 'split' ? (
+                <div key="split" className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#E8DFD0] min-h-[700px]">
+                  <div className="p-4 sm:p-8 flex flex-col">
+                    <div className="text-xs font-bold text-[#8C7B6B] mb-3 uppercase tracking-wider flex items-center gap-1.5">
+                      <Pencil className="w-3.5 h-3.5 text-[#8B5E3C]" /> Markdown Source
+                    </div>
+                    <textarea value={content} onChange={e => { setContent(e.target.value); setIsDirty(true); setSaveSuccess(false); }}
+                      className="w-full flex-1 min-h-[550px] resize-none border-none focus:ring-0 p-0 text-[#3D2E1C] leading-relaxed text-sm bg-transparent placeholder:text-[#8C7B6B]/50 font-mono focus:outline-none"
+                      placeholder="Type or paste markdown..." spellCheck={false} />
+                  </div>
+                  <div className="p-4 sm:p-8 overflow-y-auto max-h-[80vh]">
+                    <div className="text-xs font-bold text-[#8C7B6B] mb-3 uppercase tracking-wider flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5 text-[#8B5E3C]" /> Formatted Output
+                    </div>
+                    <div className="mb-4 pb-2 border-b border-[#E8DFD0]">
+                      <h2 className="text-xl font-serif font-black text-[#3D2E1C]">{title}</h2>
+                    </div>
+                    <MarkdownPreview content={content || ''} />
+                  </div>
+                </div>
+              ) : mode === 'edit' ? (
                 <motion.div key="edit" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="p-5 sm:p-12 md:p-20">
                   <textarea value={content} onChange={e => { setContent(e.target.value); setIsDirty(true); setSaveSuccess(false); }}
                     className="w-full min-h-[500px] sm:min-h-[900px] resize-none border-none focus:ring-0 p-0 text-[#3D2E1C] leading-relaxed text-base sm:text-lg bg-transparent placeholder:text-[#8C7B6B]/50 font-mono focus:outline-none"
@@ -444,3 +479,19 @@ function AnimatedBadge({ isDirty, saveSuccess }) {
     </motion.div>
   );
 }
+
+Editor.propTypes = {
+  doc: PropTypes.shape({
+    id: PropTypes.string,
+    userId: PropTypes.string,
+    title: PropTypes.string,
+    content: PropTypes.string
+  }),
+  onBack: PropTypes.func,
+  versions: PropTypes.array
+};
+
+AnimatedBadge.propTypes = {
+  isDirty: PropTypes.bool,
+  saveSuccess: PropTypes.bool
+};

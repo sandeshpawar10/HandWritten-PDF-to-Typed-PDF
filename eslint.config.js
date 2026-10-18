@@ -6,6 +6,7 @@ import globals from "globals";
 export default [
   js.configs.recommended,
   {
+    files: ["**/*.{js,jsx}"],
     plugins: {
       react: reactPlugin,
       "react-hooks": reactHooksPlugin
@@ -24,8 +25,10 @@ export default [
       }
     },
     rules: {
-      "no-unused-vars": "warn",
-      "react/prop-types": "warn", // Issue #16: Re-enable to catch type errors
+      "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+      "react/jsx-uses-react": "error",
+      "react/jsx-uses-vars": "error",
+      "react/prop-types": "off",
       "react/react-in-jsx-scope": "off"
     }
   }

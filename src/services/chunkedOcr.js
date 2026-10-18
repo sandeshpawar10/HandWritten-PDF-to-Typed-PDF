@@ -19,8 +19,6 @@ const WARN_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 // Inactivity timeout: If no heartbeat or progress is received for 3 minutes,
 // consider connection stalled. Heartbeats are sent every 15s from server.
 const INACTIVITY_TIMEOUT_MS = 180000; // 3 minutes
-// Maximum safety cap for very large multi-page jobs
-const MAX_OVERALL_TIMEOUT_MS = 45 * 60 * 1000; // 45 minutes
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -69,8 +67,6 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
   if (!auth.currentUser) {
     throw new Error("Must be logged in to process documents.");
   }
-
-  const token = await auth.currentUser.getIdToken();
 
   // Track cancellation source
   let isCancelledByUser = false;
@@ -359,10 +355,35 @@ function shouldFallbackToClient(error) {
  *
  * @param {File} file - Image or PDF file
  * @param {Function} onProgress - Progress callback
+ * @param {AbortSignal} externalSignal - User cancellation signal
  * @returns {Object} { text, formattedPdf, formattedDocx, totalPages, pagesProcessed, clientSide? }
  */
 export async function convertWithFallback(file, onProgress, externalSignal) {
-  // Always use high-precision server-side OCR with persistent resume
-  return await convertToFormattedDocumentChunked(file, onProgress, externalSignal);
+  try {
+    return await convertToFormattedDocumentChunked(file, onProgress, externalSignal);
+  } catch (error) {
+    if (externalSignal?.aborted || error.message?.toLowerCase().includes('cancelled by user')) {
+      throw error;
+    }
+    if (shouldFallbackToClient(error)) {
+      console.warn('Server OCR failed; falling back to client-side OCR engine:', error.message);
+      onProgress?.({
+        current: 0,
+        total: 1,
+        percent: 5,
+        message: 'Server unreachable. Switching to in-browser OCR engine...'
+      });
+      const clientResult = await clientSideOcr(file, onProgress);
+      return {
+        text: clientResult.text,
+        formattedPdf: null,
+        formattedDocx: null,
+        totalPages: clientResult.totalPages || 1,
+        pagesProcessed: clientResult.pagesProcessed || 1,
+        clientSide: true
+      };
+    }
+    throw error;
+  }
 }
 

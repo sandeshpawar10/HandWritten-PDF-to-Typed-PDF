@@ -124,14 +124,8 @@ export async function createDocument(userId, title, content, originalFileName) {
   });
 }
 
-export async function updateDocument(documentId, updates, saveHistory = true, note) {
+export async function updateDocument(documentId, updates) {
   const docRef = doc(db, COLLECTION_NAME, documentId);
-  
-  if (saveHistory) {
-    // We'd ideally want to get current content before updating to save it as a version
-    // But for simplicity in this flow, we'll assume the caller might handle versioning if needed
-    // or we can implement it here.
-  }
 
   return updateDoc(docRef, {
     ...updates,

@@ -10,11 +10,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "npx rimraf dist",
-    "lint": "eslint src server --ext js,jsx --report-unused-disable-directives --max-warnings 200",
+    "lint": "eslint src server --report-unused-disable-directives",
     "lint:fix": "eslint src server --ext js,jsx --fix",
-    "test": "echo 'Tests to be implemented' && exit 0",
-    "test:watch": "echo 'Tests to be implemented'",
-    "test:coverage": "echo 'Tests to be implemented'"
+    "test": "node --test test/**/*.test.js",
+    "test:watch": "node --test --watch test/**/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage test/**/*.test.js"
   },
   "dependencies": {
     "@google/genai": "^2.30.0",

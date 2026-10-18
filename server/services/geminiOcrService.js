@@ -1,12 +1,18 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { PDFDocument } from 'pdf-lib';
 import { createDocxBuffer } from './docxExportService.js';
-import { transcribePage, OcrError } from './geminiPool.js';
+import { createPdfBuffer } from './pdfExportService.js';
+import { transcribePage, maskKey } from './geminiPool.js';
+import { parseBase64Payload, LIMITS } from '../utils/validation.js';
+import { markdownToAst } from './ocrAst.js';
+import { verifyPageAst } from './ocrVerifier.js';
+
+const OCR_PROMPT_VERSION = 'v2.1_academic_ast';
 
 /**
- * Persistent on-disk and in-memory page cache.
- * Survives process restarts, container redeployments, and network interruptions.
+ * Persistent content-addressed and atomic page cache.
  */
 const CACHE_DIR = path.join(process.cwd(), '.ocr_cache');
 try {
@@ -19,38 +25,83 @@ try {
 
 const pageMemoryCache = new Map();
 
+/**
+ * Generate SHA-256 content-addressed cache key.
+ */
+export function computePageCacheKey(sourceBuffer, pageNum, promptVersion = OCR_PROMPT_VERSION) {
+  return crypto.createHash('sha256')
+    .update(sourceBuffer)
+    .update(`_p${pageNum}_`)
+    .update(promptVersion)
+    .digest('hex');
+}
+
+/**
+ * Read cached page from memory or disk.
+ */
 function getCachedPage(cacheKey) {
   if (pageMemoryCache.has(cacheKey)) {
     return pageMemoryCache.get(cacheKey);
   }
   try {
-    const filePath = path.join(CACHE_DIR, `${cacheKey}.md`);
+    const filePath = path.join(CACHE_DIR, `${cacheKey}.json`);
     if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      if (content && content.trim().length > 0) {
-        pageMemoryCache.set(cacheKey, content);
-        return content;
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      if (data && data.text) {
+        pageMemoryCache.set(cacheKey, data.text);
+        return data.text;
       }
     }
-  } catch (e) {
-    // ignore read error
+  } catch {
+    // fallback / cache miss
   }
   return null;
 }
 
-function saveCachedPage(cacheKey, content) {
-  pageMemoryCache.set(cacheKey, content);
+/**
+ * Atomically save page to memory and disk (write to temp file then rename).
+ */
+function saveCachedPage(cacheKey, text, pageAst = null) {
+  pageMemoryCache.set(cacheKey, text);
   try {
-    const filePath = path.join(CACHE_DIR, `${cacheKey}.md`);
-    fs.writeFileSync(filePath, content, 'utf8');
+    const payload = JSON.stringify({
+      cacheKey,
+      savedAt: new Date().toISOString(),
+      text,
+      ast: pageAst
+    });
+    const tempFile = path.join(CACHE_DIR, `tmp_${cacheKey}_${Date.now()}.json`);
+    const targetFile = path.join(CACHE_DIR, `${cacheKey}.json`);
+    fs.writeFileSync(tempFile, payload, 'utf8');
+    fs.renameSync(tempFile, targetFile);
   } catch (e) {
     console.warn(`Failed to persist cache for ${cacheKey}:`, e.message);
   }
 }
 
 /**
- * Strict academic prompt engineered for verbatim transcription,
- * vertical step-by-step LaTeX math, and structured ASCII diagrams.
+ * Clear all cached OCR files on disk and memory.
+ */
+export function clearOcrCache() {
+  pageMemoryCache.clear();
+  try {
+    if (fs.existsSync(CACHE_DIR)) {
+      const files = fs.readdirSync(CACHE_DIR);
+      for (const file of files) {
+        if (file.endsWith('.json') || file.endsWith('.md')) {
+          fs.unlinkSync(path.join(CACHE_DIR, file));
+        }
+      }
+    }
+    return { success: true, message: 'OCR cache cleared successfully.' };
+  } catch (e) {
+    console.error('Error clearing OCR cache:', e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Strict academic transcription prompt.
  */
 const OCR_SYSTEM_PROMPT = `You are an expert academic transcriber specializing in handwritten university notes, mathematics, computer science algorithms, and technical diagrams.
 
@@ -90,21 +141,37 @@ Transcribe the provided document page into clean, publication-ready GitHub-flavo
 Return ONLY the clean Markdown transcription of this page without conversational preamble or conversational sign-off.`;
 
 /**
- * Parse all configured API keys (supports single key or comma-separated list of keys)
+ * Parse all configured API keys (supports named keys GEMINI_KEY_01... and comma-separated GEMINI_API_KEY).
  */
-function getApiKeys() {
+export function getApiKeys() {
+  const keys = [];
+
+  // Check named keys GEMINI_KEY_01 to GEMINI_KEY_20
+  for (let i = 1; i <= 20; i++) {
+    const keyName = `GEMINI_KEY_${String(i).padStart(2, '0')}`;
+    const k = process.env[keyName]?.trim();
+    if (k && k !== 'your_gemini_api_key_here' && !keys.includes(k)) {
+      keys.push(k);
+    }
+  }
+
+  // Check comma-separated GEMINI_API_KEY
   const raw = process.env.GEMINI_API_KEY || '';
-  return raw
-    .split(',')
-    .map(k => k.trim())
-    .filter(k => k && k !== 'your_gemini_api_key_here');
+  for (const part of raw.split(',')) {
+    const k = part.trim();
+    if (k && k !== 'your_gemini_api_key_here' && !keys.includes(k)) {
+      keys.push(k);
+    }
+  }
+
+  return keys;
 }
 
 /**
- * Main chunked OCR processing function with persistent resume support & parallel worker pool
+ * Main chunked OCR processing function with persistent resume support & parallel worker pool.
  * @param {Object} body - Request body containing document payload
  * @param {Function} onProgress - Progress callback function (current, total, percent, message)
- * @returns {Promise<Object>} - Formatted result with text, docx, page counts
+ * @returns {Promise<Object>} - Formatted result with text, pdf, docx, page counts
  */
 export async function runGeminiOCR(body, onProgress) {
   const apiKeys = getApiKeys();
@@ -113,40 +180,33 @@ export async function runGeminiOCR(body, onProgress) {
     throw {
       status: 500,
       data: {
-        error: 'API key is not configured. Please set GEMINI_API_KEY in your .env file or server environment.',
+        error: 'API key is not configured. Please set GEMINI_API_KEY or GEMINI_KEY_01..06 in your server environment.',
         type: 'CONFIG_ERROR'
       }
     };
   }
 
-  console.log(`OCR Service active with ${apiKeys.length} API key(s) in rotation pool.`);
+  const maskedSummary = apiKeys.map(k => maskKey(k)).join(', ');
+  console.log(`OCR Service active with ${apiKeys.length} API key(s) in rotation pool [${maskedSummary}].`);
 
   if (!body || typeof body !== 'object' || !body.document) {
     throw {
       status: 400,
-      data: { error: 'Invalid request: document is required', type: 'INVALID_REQUEST' }
+      data: { error: 'Invalid request: document object is required.', type: 'INVALID_REQUEST' }
     };
   }
 
-  let rawData = body.document.image_url || body.document.document_url;
+  const rawData = body.document.image_url || body.document.document_url;
   if (!rawData) {
     throw {
       status: 400,
-      data: { error: 'Invalid request: image_url or document_url is required', type: 'INVALID_REQUEST' }
+      data: { error: 'Invalid request: image_url or document_url is required.', type: 'INVALID_REQUEST' }
     };
   }
 
-  let mimeType = 'image/jpeg';
-  if (rawData.startsWith('data:')) {
-    const match = rawData.match(/^data:([^;]+);base64,/);
-    if (match) {
-      mimeType = match[1];
-      rawData = rawData.split('base64,')[1];
-    }
-  }
-
-  const buffer = Buffer.from(rawData, 'base64');
-  const isPdf = mimeType === 'application/pdf' || buffer.subarray(0, 4).toString() === '%PDF';
+  // Validate magic bytes, limits, and payload
+  const { mimeType, buffer } = parseBase64Payload(rawData);
+  const isPdf = mimeType === 'application/pdf';
 
   if (isPdf) {
     console.log('Loading PDF document with pdf-lib...');
@@ -155,7 +215,7 @@ export async function runGeminiOCR(body, onProgress) {
       pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
     } catch (pdfErr) {
       throw {
-        status: 400,
+        status: 422,
         data: { error: `Failed to parse PDF document: ${pdfErr.message}`, type: 'INVALID_PDF' }
       };
     }
@@ -165,20 +225,26 @@ export async function runGeminiOCR(body, onProgress) {
 
     if (totalPages === 0) {
       throw {
-        status: 400,
+        status: 422,
         data: { error: 'The uploaded PDF has 0 pages.', type: 'EMPTY_PDF' }
       };
     }
 
-    // Determine concurrency based on available API keys (default: 2 workers when >=4 keys, else 1)
-    const defaultConcurrency = apiKeys.length >= 4 ? 2 : 1;
-    const concurrency = Math.min(
-      Math.max(1, apiKeys.length),
-      parseInt(process.env.OCR_CONCURRENCY || String(defaultConcurrency), 10)
-    );
+    if (totalPages > LIMITS.MAX_PAGE_COUNT) {
+      throw {
+        status: 413,
+        data: {
+          error: `Document has ${totalPages} pages, exceeding the maximum limit of ${LIMITS.MAX_PAGE_COUNT} pages.`,
+          type: 'EXCEEDED_PAGE_LIMIT'
+        }
+      };
+    }
 
-    // Document unique signature for disk and memory caching
-    const docSignature = `${buffer.length}_${buffer.subarray(0, 64).toString('hex')}`;
+    // Decoupled concurrency: Use up to number of healthy keys (e.g. 6) or OCR_CONCURRENCY
+    const concurrency = Math.min(
+      apiKeys.length,
+      parseInt(process.env.OCR_CONCURRENCY || String(apiKeys.length), 10)
+    );
 
     // PRE-SCAN: Scan for any pages ALREADY completed on disk or in memory
     const results = new Array(totalPages);
@@ -187,7 +253,7 @@ export async function runGeminiOCR(body, onProgress) {
 
     for (let i = 0; i < totalPages; i++) {
       const pageNum = i + 1;
-      const cacheKey = `${docSignature}_page_${pageNum}`;
+      const cacheKey = computePageCacheKey(buffer, pageNum);
       const cached = getCachedPage(cacheKey);
       if (cached) {
         results[i] = cached;
@@ -200,6 +266,7 @@ export async function runGeminiOCR(body, onProgress) {
     if (completedCount > 0) {
       console.log(`⚡ Instant Resume: ${completedCount}/${totalPages} pages restored from cache.`);
       onProgress?.({
+        stage: 'transcribing',
         current: completedCount,
         total: totalPages,
         percent: Math.round((completedCount / totalPages) * 100),
@@ -207,16 +274,17 @@ export async function runGeminiOCR(body, onProgress) {
       });
     } else {
       onProgress?.({
+        stage: 'rendering',
         current: 0,
         total: totalPages,
         percent: 0,
-        message: `Starting parallel processing (${concurrency} workers active)...`
+        message: `Starting parallel processing (${concurrency} page workers active across ${apiKeys.length} keys)...`
       });
     }
 
-    // If all pages were already cached, skip straight to assembly
+    // Process remaining pages in parallel worker pool
     if (pagesToProcess.length > 0) {
-      console.log(`Processing remaining ${pagesToProcess.length} pages with concurrency = ${concurrency} across ${apiKeys.length} API keys...`);
+      console.log(`Processing ${pagesToProcess.length} pages with concurrency=${concurrency} across ${apiKeys.length} API keys...`);
 
       let queueIndex = 0;
 
@@ -224,11 +292,11 @@ export async function runGeminiOCR(body, onProgress) {
         while (queueIndex < pagesToProcess.length) {
           const i = pagesToProcess[queueIndex++];
           const pageNum = i + 1;
-          const cacheKey = `${docSignature}_page_${pageNum}`;
+          const cacheKey = computePageCacheKey(buffer, pageNum);
 
           console.log(`[Worker ${workerId}] Processing page ${pageNum}/${totalPages}...`);
 
-          // Extract single-page PDF in-memory (100% individual page attention)
+          // Extract single page in-memory
           const singlePageDoc = await PDFDocument.create();
           const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
           singlePageDoc.addPage(copiedPage);
@@ -236,6 +304,7 @@ export async function runGeminiOCR(body, onProgress) {
           const singlePageBase64 = Buffer.from(singlePageBytes).toString('base64');
 
           onProgress?.({
+            stage: 'transcribing',
             current: completedCount,
             total: totalPages,
             percent: Math.round((completedCount / totalPages) * 100),
@@ -243,7 +312,7 @@ export async function runGeminiOCR(body, onProgress) {
           });
 
           try {
-            const { text: pageText } = await transcribePage({
+            const { text: pageText, model: usedModel } = await transcribePage({
               apiKeys,
               mimeType: 'application/pdf',
               base64Data: singlePageBase64,
@@ -251,6 +320,7 @@ export async function runGeminiOCR(body, onProgress) {
               pageNum,
               onStatus: (msg) => {
                 onProgress?.({
+                  stage: 'transcribing',
                   current: completedCount,
                   total: totalPages,
                   percent: Math.round((completedCount / totalPages) * 100),
@@ -259,20 +329,24 @@ export async function runGeminiOCR(body, onProgress) {
               }
             });
 
+            // Convert to structured AST and verify
+            const pageAst = markdownToAst(pageText, pageNum, { model: usedModel });
+            verifyPageAst(pageAst);
+
             const formattedPage = `--- Page ${pageNum} ---\n\n${pageText}`;
             results[i] = formattedPage;
-            // Persist to both memory AND disk so failure never forces restart
-            saveCachedPage(cacheKey, formattedPage);
+            saveCachedPage(cacheKey, formattedPage, pageAst);
             completedCount++;
 
             onProgress?.({
+              stage: 'transcribing',
               current: completedCount,
               total: totalPages,
               percent: Math.round((completedCount / totalPages) * 100),
               message: `Page ${pageNum} completed (${completedCount}/${totalPages} finished).`
             });
           } catch (pageErr) {
-            console.error(`[Worker ${workerId}] Error transcribing page ${pageNum}:`, pageErr.message);
+            console.error(`[Worker ${workerId}] Error on page ${pageNum}:`, pageErr.message);
             throw {
               status: 500,
               data: {
@@ -284,7 +358,6 @@ export async function runGeminiOCR(body, onProgress) {
         }
       }
 
-      // Launch worker pool
       const workerPromises = [];
       for (let w = 0; w < Math.min(concurrency, pagesToProcess.length); w++) {
         workerPromises.push(worker(w + 1));
@@ -294,10 +367,11 @@ export async function runGeminiOCR(body, onProgress) {
     }
 
     onProgress?.({
+      stage: 'formatting',
       current: totalPages,
       total: totalPages,
-      percent: 100,
-      message: 'Assembling document & generating formatted Word document...'
+      percent: 95,
+      message: 'Generating formatted PDF and Word documents...'
     });
 
     const fullMarkdown = results.join('\n\n');
@@ -308,56 +382,91 @@ export async function runGeminiOCR(body, onProgress) {
       const docxBuffer = await createDocxBuffer('Transcribed Notes', fullMarkdown);
       formattedDocx = docxBuffer.toString('base64');
     } catch (docxErr) {
-      console.warn('Docx generation warning (non-fatal):', docxErr.message);
+      console.warn('Docx generation warning:', docxErr.message);
     }
+
+    // Generate formatted PDF document
+    let formattedPdf = null;
+    try {
+      const pdfBuffer = await createPdfBuffer('Transcribed Notes', fullMarkdown);
+      formattedPdf = pdfBuffer.toString('base64');
+    } catch (pdfErr) {
+      console.warn('PDF generation warning:', pdfErr.message);
+    }
+
+    onProgress?.({
+      stage: 'complete',
+      current: totalPages,
+      total: totalPages,
+      percent: 100,
+      message: 'Processing complete!'
+    });
 
     return {
       text: fullMarkdown,
-      formatted_pdf: null,
+      formatted_pdf: formattedPdf,
+      formattedPdf,
       formatted_docx: formattedDocx,
+      formattedDocx,
       total_pages: totalPages,
-      pages_processed: totalPages
+      totalPages,
+      pages_processed: totalPages,
+      pagesProcessed: totalPages
     };
 
   } else {
     // Single image processing
     console.log(`Processing single image (${mimeType})...`);
+    const imageCacheKey = computePageCacheKey(buffer, 1);
+    const cachedImage = getCachedPage(imageCacheKey);
 
-    const imageSignature = `img_${buffer.length}_${buffer.subarray(0, 64).toString('hex')}`;
-    const cachedImage = getCachedPage(imageSignature);
     if (cachedImage) {
       console.log('Serving single image from cache.');
       let formattedDocx = null;
+      let formattedPdf = null;
       try {
         const docxBuffer = await createDocxBuffer('Transcribed Note', cachedImage);
         formattedDocx = docxBuffer.toString('base64');
-      } catch (docxErr) {
-        console.warn('Docx generation warning:', docxErr.message);
+      } catch (e) {
+        console.warn('DOCX warning:', e.message);
       }
+      try {
+        const pdfBuffer = await createPdfBuffer('Transcribed Note', cachedImage);
+        formattedPdf = pdfBuffer.toString('base64');
+      } catch (e) {
+        console.warn('PDF warning:', e.message);
+      }
+
       return {
         text: cachedImage,
-        formatted_pdf: null,
+        formatted_pdf: formattedPdf,
+        formattedPdf,
         formatted_docx: formattedDocx,
+        formattedDocx,
         total_pages: 1,
-        pages_processed: 1
+        totalPages: 1,
+        pages_processed: 1,
+        pagesProcessed: 1
       };
     }
 
     onProgress?.({
+      stage: 'transcribing',
       current: 0,
       total: 1,
-      percent: 25,
-      message: 'Transcribing image...'
+      percent: 30,
+      message: 'Transcribing image with Gemini...'
     });
 
-    const { text: pageText } = await transcribePage({
+    const { text: pageText, model: usedModel } = await transcribePage({
       apiKeys,
       mimeType,
-      base64Data: rawData,
+      base64Data: buffer.toString('base64'),
       prompt: OCR_SYSTEM_PROMPT,
       pageNum: 1,
       onStatus: (msg) => {
         onProgress?.({
+          stage: 'transcribing',
           current: 0,
           total: 1,
           percent: 50,
@@ -365,24 +474,36 @@ export async function runGeminiOCR(body, onProgress) {
         });
       }
     });
-    saveCachedPage(imageSignature, pageText);
+
+    const pageAst = markdownToAst(pageText, 1, { model: usedModel });
+    verifyPageAst(pageAst);
+    saveCachedPage(imageCacheKey, pageText, pageAst);
 
     onProgress?.({
+      stage: 'formatting',
       current: 1,
       total: 1,
       percent: 85,
-      message: 'Formatting document...'
+      message: 'Formatting PDF and Word document...'
     });
 
     let formattedDocx = null;
+    let formattedPdf = null;
     try {
       const docxBuffer = await createDocxBuffer('Transcribed Note', pageText);
       formattedDocx = docxBuffer.toString('base64');
-    } catch (docxErr) {
-      console.warn('Docx generation warning (non-fatal):', docxErr.message);
+    } catch (e) {
+      console.warn('DOCX warning:', e.message);
+    }
+    try {
+      const pdfBuffer = await createPdfBuffer('Transcribed Note', pageText);
+      formattedPdf = pdfBuffer.toString('base64');
+    } catch (e) {
+      console.warn('PDF warning:', e.message);
     }
 
     onProgress?.({
+      stage: 'complete',
       current: 1,
       total: 1,
       percent: 100,
@@ -391,10 +512,14 @@ export async function runGeminiOCR(body, onProgress) {
 
     return {
       text: pageText,
-      formatted_pdf: null,
+      formatted_pdf: formattedPdf,
+      formattedPdf,
       formatted_docx: formattedDocx,
+      formattedDocx,
       total_pages: 1,
-      pages_processed: 1
+      totalPages: 1,
+      pages_processed: 1,
+      pagesProcessed: 1
     };
   }
 }

@@ -1,4 +1,5 @@
-import { runGeminiOCR } from '../services/geminiOcrService.js';
+import { runGeminiOCR, clearOcrCache } from '../services/geminiOcrService.js';
+import { getPoolTelemetry } from '../services/geminiPool.js';
 
 export const handleOcr = async (req, res) => {
   try {
@@ -25,7 +26,6 @@ export const handleOcr = async (req, res) => {
       userId: req.user?.uid
     });
 
-    // Return more specific error information
     const statusCode = error.status || 500;
     const errorMessage = error.data?.error || error.message || 'Internal Server Error';
 
@@ -37,5 +37,26 @@ export const handleOcr = async (req, res) => {
         details: error.data,
       })
     });
+  }
+};
+
+export const handleClearCache = async (req, res) => {
+  try {
+    const result = clearOcrCache();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear cache', details: err.message });
+  }
+};
+
+export const handlePoolStats = async (req, res) => {
+  try {
+    const stats = getPoolTelemetry();
+    res.json({
+      timestamp: new Date().toISOString(),
+      slots: stats
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve telemetry', details: err.message });
   }
 };

@@ -211,7 +211,7 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
 
           <div className="space-y-3">
             <AnimatePresence initial={false}>
-              {jobs.map((job, i) => {
+              {jobs.map(job => {
                 const cfg = statusConfig[job.status];
                 const StatusIcon = cfg.icon;
                 const TypeIcon = getFileIcon(job.file.name);

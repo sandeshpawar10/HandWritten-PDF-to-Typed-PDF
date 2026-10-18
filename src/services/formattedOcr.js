@@ -69,7 +69,7 @@ async function apiFetch(url, body, onProgress) {
       let data;
       try {
         data = await res.json();
-      } catch (parseError) {
+      } catch {
         throw new Error(`Server returned non-JSON response (HTTP ${res.status}). The server may be overloaded or unavailable.`);
       }
       if (res.ok) return data;
