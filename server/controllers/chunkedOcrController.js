@@ -15,12 +15,19 @@ export const handleChunkedOcr = async (req, res) => {
   res.setHeader('Content-Encoding', 'none'); // Explicitly prevent compression
   res.flushHeaders();
 
-  // Keep-alive heartbeat to prevent proxy/Render timeouts
-  const heartbeat = setInterval(() => {
-    if (!res.writableEnded) {
-      res.write(': heartbeat\n\n');
+  const sendSse = (data) => {
+    if (!clientDisconnected && !res.writableEnded) {
+      res.write(data);
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
     }
-  }, 15000); // Every 15 seconds
+  };
+
+  // Keep-alive heartbeat every 10s to prevent proxy/Render idle timeouts
+  const heartbeat = setInterval(() => {
+    sendSse(': heartbeat\n\n');
+  }, 10000);
 
   // Track client disconnection
   let clientDisconnected = false;
@@ -32,9 +39,7 @@ export const handleChunkedOcr = async (req, res) => {
   try {
     const data = await runGeminiOCR(req.body, (progress) => {
       // Stream progress to client via SSE
-      if (!clientDisconnected && !res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ type: 'progress', ...progress })}\n\n`);
-      }
+      sendSse(`data: ${JSON.stringify({ type: 'progress', ...progress })}\n\n`);
     });
 
     console.log('Chunked OCR processing successful:', {
@@ -47,8 +52,8 @@ export const handleChunkedOcr = async (req, res) => {
     });
 
     // Send final result
-    if (!clientDisconnected && !res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ type: 'result', ...data })}\n\n`);
+    sendSse(`data: ${JSON.stringify({ type: 'result', ...data })}\n\n`);
+    if (!res.writableEnded) {
       res.end();
     }
   } catch (error) {
@@ -56,13 +61,13 @@ export const handleChunkedOcr = async (req, res) => {
     const statusCode = error.status || 500;
     const errorMessage = error.data?.error || error.message || 'Internal Server Error';
 
-    if (!clientDisconnected && !res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ 
-        type: 'error', 
-        error: errorMessage,
-        status: statusCode,
-        errorType: error.data?.type || error.type
-      })}\n\n`);
+    sendSse(`data: ${JSON.stringify({ 
+      type: 'error', 
+      error: errorMessage,
+      status: statusCode,
+      errorType: error.data?.type || error.type
+    })}\n\n`);
+    if (!res.writableEnded) {
       res.end();
     }
   } finally {

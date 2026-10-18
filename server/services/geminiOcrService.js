@@ -170,10 +170,11 @@ export async function runGeminiOCR(body, onProgress) {
       };
     }
 
-    // Determine concurrency based on available API keys (default: 1 sequential worker for zero-collision rate stability)
+    // Determine concurrency based on available API keys (default: 2 workers when >=4 keys, else 1)
+    const defaultConcurrency = apiKeys.length >= 4 ? 2 : 1;
     const concurrency = Math.min(
       Math.max(1, apiKeys.length),
-      parseInt(process.env.OCR_CONCURRENCY || '1', 10)
+      parseInt(process.env.OCR_CONCURRENCY || String(defaultConcurrency), 10)
     );
 
     // Document unique signature for disk and memory caching

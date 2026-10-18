@@ -74,191 +74,229 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
 
   // Track cancellation source
   let isCancelledByUser = false;
-  let isTimedOutDueToInactivity = false;
-  let isTimedOutOverall = false;
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      throw new Error("Conversion cancelled by user.");
+    }
+    externalSignal.addEventListener('abort', () => {
+      isCancelledByUser = true;
+    }, { once: true });
+  }
 
-  const controller = new AbortController();
+  let lastProgress = { current: 0, total: 0, percent: 0, message: '' };
+  const wrappedOnProgress = (p) => {
+    lastProgress = { ...lastProgress, ...p };
+    onProgress?.(p);
+  };
 
-  // Overall safety timeout (45 minutes)
-  const overallTimeoutId = setTimeout(() => {
-    isTimedOutOverall = true;
-    controller.abort();
-  }, MAX_OVERALL_TIMEOUT_MS);
+  const MAX_RECONNECTS = 3;
+  let finalResult = null;
 
-  // Rolling inactivity timer (resets whenever any SSE byte or heartbeat is received)
-  let inactivityTimer = null;
-  function pokeActivity() {
-    if (inactivityTimer) clearTimeout(inactivityTimer);
-    inactivityTimer = setTimeout(() => {
+  for (let attempt = 0; attempt <= MAX_RECONNECTS; attempt++) {
+    if (isCancelledByUser || externalSignal?.aborted) {
+      throw new Error("Conversion cancelled by user.");
+    }
+
+    if (attempt > 0) {
+      wrappedOnProgress({
+        ...lastProgress,
+        message: `Connection refreshed. Resuming from saved pages (attempt ${attempt}/${MAX_RECONNECTS})...`
+      });
+      await sleep(2000 * attempt);
+    }
+
+    const token = await auth.currentUser.getIdToken();
+    const controller = new AbortController();
+
+    let isTimedOutDueToInactivity = false;
+    let inactivityTimer = setTimeout(() => {
       isTimedOutDueToInactivity = true;
       controller.abort();
     }, INACTIVITY_TIMEOUT_MS);
-  }
 
-  pokeActivity();
-
-  if (externalSignal) {
-    if (externalSignal.aborted) {
-      isCancelledByUser = true;
-      clearTimeout(overallTimeoutId);
+    function pokeActivity() {
       if (inactivityTimer) clearTimeout(inactivityTimer);
-      controller.abort();
-    } else {
-      externalSignal.addEventListener('abort', () => {
-        isCancelledByUser = true;
-        clearTimeout(overallTimeoutId);
-        if (inactivityTimer) clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        isTimedOutDueToInactivity = true;
         controller.abort();
-      }, { once: true });
-    }
-  }
-
-  try {
-    const res = await fetch(CHUNKED_OCR_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        document: {
-          type: isPdf ? "document_url" : "image_url",
-          [isPdf ? "document_url" : "image_url"]: documentUrl
-        }
-      }),
-      signal: controller.signal
-    });
-
-    if (!res.ok) {
-      clearTimeout(overallTimeoutId);
-      if (inactivityTimer) clearTimeout(inactivityTimer);
-      let errorMsg = `HTTP ${res.status}`;
-      try {
-        const text = await res.text();
-        try {
-          const json = JSON.parse(text);
-          errorMsg = json.error || json.message || errorMsg;
-        } catch {
-          if (text && text.trim().length > 0 && text.length < 300) {
-            errorMsg = text.trim();
-          }
-        }
-      } catch {
-        // ignore read error
-      }
-      throw new Error(errorMsg);
+      }, INACTIVITY_TIMEOUT_MS);
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let finalResult = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      // Reset inactivity timer on receipt of ANY data chunk or heartbeat
-      pokeActivity();
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-      for (const line of lines) {
-        // Skip SSE comments (heartbeats)
-        if (line.startsWith(':')) continue;
-        if (line.startsWith('data: ')) {
-          let event = null;
-          try {
-            event = JSON.parse(line.slice(6));
-          } catch {
-            // Skip malformed JSON lines
-            continue;
-          }
-
-          if (event.type === 'progress' && onProgress) {
-            onProgress({
-              current: event.current_page ?? event.current ?? 0,
-              total: event.total_pages ?? event.total ?? 0,
-              percent: event.percent ?? Math.round(((event.current_page || 0) / (event.total_pages || 1)) * 100),
-              message: event.message || `Processing page ${event.current_page || 0} of ${event.total_pages || 0}...`
-            });
-          } else if (event.type === 'result') {
-            finalResult = event;
-          } else if (event.type === 'error') {
-            throw new Error(event.error || 'OCR processing failed');
-          }
-        }
-      }
-    }
-
-    clearTimeout(overallTimeoutId);
-    if (inactivityTimer) clearTimeout(inactivityTimer);
-
-    // Process any remaining data in the buffer
-    const remainingLines = buffer.split('\n');
-    for (const line of remainingLines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith(':')) continue; // Skip heartbeat comments
-      if (trimmed.startsWith('data: ')) {
-        try {
-          const event = JSON.parse(trimmed.slice(6));
-          if (event.type === 'result') {
-            finalResult = event;
-          } else if (event.type === 'error') {
-            throw new Error(event.error || 'OCR processing failed');
-          }
-        } catch (e) {
-          if (e.message && !e.message.includes('JSON')) throw e;
-          // Skip malformed JSON
-        }
-      }
-    }
-
-    if (!finalResult) {
-      throw new Error('No result received from OCR processing');
-    }
-
-    if (!finalResult.text || finalResult.text.trim().length === 0) {
-      throw new Error("No text could be extracted from the document.");
-    }
-
-    // Final progress update
-    onProgress?.({
-      current: finalResult.pages_processed || finalResult.total_pages || 0,
-      total: finalResult.total_pages || 0,
-      percent: 100,
-      message: "Processing complete!"
-    });
-
-    return {
-      text: finalResult.text,
-      formattedPdf: finalResult.formatted_pdf || finalResult.formattedPdf,
-      formattedDocx: finalResult.formatted_docx || finalResult.formattedDocx,
-      totalPages: finalResult.total_pages || finalResult.totalPages,
-      pagesProcessed: finalResult.pages_processed || finalResult.pagesProcessed
+    const onExternalAbort = () => {
+      isCancelledByUser = true;
+      clearTimeout(inactivityTimer);
+      controller.abort();
     };
+    if (externalSignal) {
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
 
-  } catch (error) {
-    clearTimeout(overallTimeoutId);
-    if (inactivityTimer) clearTimeout(inactivityTimer);
+    try {
+      const res = await fetch(CHUNKED_OCR_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          document: {
+            type: isPdf ? "document_url" : "image_url",
+            [isPdf ? "document_url" : "image_url"]: documentUrl
+          }
+        }),
+        signal: controller.signal
+      });
 
-    if (error.name === 'AbortError' || controller.signal.aborted) {
+      if (!res.ok) {
+        clearTimeout(inactivityTimer);
+        let errorMsg = `HTTP ${res.status}`;
+        try {
+          const text = await res.text();
+          try {
+            const json = JSON.parse(text);
+            errorMsg = json.error || json.message || errorMsg;
+          } catch {
+            if (text && text.trim().length > 0 && text.length < 300) {
+              errorMsg = text.trim();
+            }
+          }
+        } catch {
+          // ignore read error
+        }
+
+        if ([502, 503, 504].includes(res.status) && attempt < MAX_RECONNECTS) {
+          console.warn(`Server busy (${res.status}), resuming...`);
+          continue;
+        }
+        throw new Error(errorMsg);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Reset inactivity timer on receipt of ANY data chunk or heartbeat
+        pokeActivity();
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          // Skip SSE comments (heartbeats)
+          if (line.startsWith(':')) continue;
+          if (line.startsWith('data: ')) {
+            let event = null;
+            try {
+              event = JSON.parse(line.slice(6));
+            } catch {
+              continue;
+            }
+
+            if (event.type === 'progress') {
+              wrappedOnProgress({
+                current: event.current_page ?? event.current ?? 0,
+                total: event.total_pages ?? event.total ?? 0,
+                percent: event.percent ?? Math.round(((event.current_page || 0) / (event.total_pages || 1)) * 100),
+                message: event.message || `Processing page ${event.current_page || 0} of ${event.total_pages || 0}...`
+              });
+            } else if (event.type === 'result') {
+              finalResult = event;
+            } else if (event.type === 'error') {
+              throw new Error(event.error || 'OCR processing failed');
+            }
+          }
+        }
+      }
+
+      clearTimeout(inactivityTimer);
+
+      // Process any remaining data in the buffer
+      const remainingLines = buffer.split('\n');
+      for (const line of remainingLines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith(':')) continue;
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const event = JSON.parse(trimmed.slice(6));
+            if (event.type === 'result') {
+              finalResult = event;
+            } else if (event.type === 'error') {
+              throw new Error(event.error || 'OCR processing failed');
+            }
+          } catch (e) {
+            if (e.message && !e.message.includes('JSON')) throw e;
+          }
+        }
+      }
+
+      if (finalResult) {
+        break; // Successfully completed!
+      }
+
+      // Stream finished without finalResult (e.g. proxy severed connection at 15m)
+      if (attempt < MAX_RECONNECTS) {
+        console.warn(`Stream closed before final result; resuming from cache (attempt ${attempt + 1}/${MAX_RECONNECTS})...`);
+        continue;
+      }
+
+      throw new Error('Connection interrupted. Click Retry to resume from saved pages.');
+
+    } catch (error) {
+      clearTimeout(inactivityTimer);
+
       if (isCancelledByUser || externalSignal?.aborted) {
         throw new Error("Conversion cancelled by user.");
       }
-      if (isTimedOutDueToInactivity) {
-        throw new Error("Server communication paused (no response for 3 minutes). Click Retry to resume from saved pages.");
-      }
-      if (isTimedOutOverall) {
-        throw new Error("Job exceeded 45-minute limit. Click Retry to resume from saved pages.");
-      }
-      throw new Error("Request was interrupted. Click Retry to resume from saved pages.");
-    }
 
-    throw error;
+      if (isTimedOutDueToInactivity && attempt < MAX_RECONNECTS) {
+        console.warn('Inactivity timeout hit; reconnecting to resume...');
+        continue;
+      }
+
+      // Check if transient network error
+      const isNetworkError = error.name === 'TypeError' || error.message?.toLowerCase().includes('network') || error.message?.toLowerCase().includes('fetch');
+      if (isNetworkError && attempt < MAX_RECONNECTS) {
+        console.warn('Network error encountered; reconnecting to resume...', error.message);
+        continue;
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(inactivityTimer);
+      if (externalSignal) {
+        externalSignal.removeEventListener('abort', onExternalAbort);
+      }
+    }
   }
+
+  if (!finalResult) {
+    throw new Error('Connection interrupted. Click Retry to resume from saved pages.');
+  }
+
+  if (!finalResult.text || finalResult.text.trim().length === 0) {
+    throw new Error("No text could be extracted from the document.");
+  }
+
+  // Final progress update
+  onProgress?.({
+    current: finalResult.pages_processed || finalResult.total_pages || 0,
+    total: finalResult.total_pages || 0,
+    percent: 100,
+    message: "Processing complete!"
+  });
+
+  return {
+    text: finalResult.text,
+    formattedPdf: finalResult.formatted_pdf || finalResult.formattedPdf,
+    formattedDocx: finalResult.formatted_docx || finalResult.formattedDocx,
+    totalPages: finalResult.total_pages || finalResult.totalPages,
+    pagesProcessed: finalResult.pages_processed || finalResult.pagesProcessed
+  };
 }
 
 function toBase64(file) {

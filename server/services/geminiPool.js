@@ -184,6 +184,7 @@ class KeyPool {
   }
 
   resetAllBlocks() {
+    this.intervalMs = this.baseIntervalMs;
     for (const s of this.slots) {
       s.blockedUntil = 0;
       s.reason = '';
@@ -319,7 +320,9 @@ export async function transcribePage({
         const { retrySec, scope } = parseQuota(res, body);
         const ms = scope === 'day' ? msUntilPacificMidnight() : (retrySec + 1) * 1000;
         keyPool.block(slot, ms, `429/${scope}`);
-        keyPool.slowDown();
+        if (scope === 'minute') {
+          keyPool.slowDown();
+        }
         console.warn(
           `Key #${slot.id} 429 (${scope} quota) on ${model}: ${detail}. Blocked ${Math.round(ms / 1000)}s. ` +
             `Pacing now ${Math.round(keyPool.intervalMs / 1000)}s/request/key.`
@@ -352,6 +355,7 @@ export async function transcribePage({
           modelIndex++;
           console.warn(`Switching page ${pageNum} to fallback model ${CANDIDATE_MODELS[modelIndex]} due to server busy (${res.status})`);
           model = CANDIDATE_MODELS[modelIndex];
+          keyPool.resetAllBlocks();
         }
         const wait = backoffMs(transient);
         onStatus?.(`Page ${pageNum}: high demand (${res.status}), retrying in ${Math.round(wait / 1000)}s...`);
