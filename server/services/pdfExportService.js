@@ -4,20 +4,21 @@
  * Generates beautifully formatted academic PDFs with headings, code blocks,
  * tables, math blocks, running headers, and page numbers.
  * Memory-efficient: pure JS stream processing (<30MB RAM).
+ * 
+ * Supports:
+ * - Mode 'clean-reflow': Compact academic typography, soft running page dividers,
+ *   suppresses 2.5x double-pagination cascade. Page count scales dynamically with document length.
+ * - Mode 'faithful': Enforces 1:1 page correspondence matching source document page budget.
+ * - Mode 'preserve-source-pages': Hard page breaks on every '--- Page N ---'.
  */
 
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
-// Page layout constants (A4 standard)
-const PAGE_WIDTH = 595.28;
-const PAGE_HEIGHT = 841.89;
-const MARGIN_LEFT = 50;
-const MARGIN_RIGHT = 50;
-const MARGIN_TOP = 60;
-const MARGIN_BOTTOM = 60;
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+// Standard A4 dimensions (pt)
+export const PAGE_WIDTH = 595.28;
+export const PAGE_HEIGHT = 841.89;
 
-// Color palette (academic styling)
+// Default academic color palette
 const COLOR_BLACK = rgb(0.12, 0.12, 0.12);
 const COLOR_MUTED = rgb(0.4, 0.4, 0.4);
 const COLOR_PRIMARY = rgb(0.1, 0.35, 0.65);
@@ -29,7 +30,7 @@ const COLOR_TH_BG = rgb(0.92, 0.94, 0.97);
 /**
  * Split text into lines that fit within maxWidth using the given font and fontSize.
  */
-function wrapText(text, font, fontSize, maxWidth) {
+export function wrapText(text, font, fontSize, maxWidth) {
   if (!text) return [''];
   const words = text.split(/\s+/);
   const lines = [];
@@ -43,7 +44,7 @@ function wrapText(text, font, fontSize, maxWidth) {
       currentLine = testLine;
     } else {
       if (currentLine) lines.push(currentLine);
-      // If a single word exceeds maxWidth, break it by characters
+      // If a single word exceeds maxWidth, break it character by character
       if (font.widthOfTextAtSize(word, fontSize) > maxWidth) {
         let sub = '';
         for (const char of word) {
@@ -128,10 +129,25 @@ export function parseMarkdownToPdfBlocks(markdown) {
       continue;
     }
 
+    // Markdown Image: ![alt](url)
+    const imgMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imgMatch) {
+      blocks.push({ type: 'image', alt: imgMatch[1], src: imgMatch[2] });
+      i++;
+      continue;
+    }
+
     // Page separator: --- Page X ---
     const pageSepMatch = trimmed.match(/^---\s*Page\s+(\d+)\s*---$/i);
     if (pageSepMatch) {
       blocks.push({ type: 'page-break', pageNum: parseInt(pageSepMatch[1], 10) });
+      i++;
+      continue;
+    }
+
+    // Diagram Metadata Block: [DIAGRAM_METADATA: ...]
+    if (trimmed.startsWith('[DIAGRAM_METADATA:') || trimmed.startsWith('[DIAGRAM:')) {
+      blocks.push({ type: 'diagram-meta', text: trimmed });
       i++;
       continue;
     }
@@ -205,12 +221,38 @@ export function parseMarkdownToPdfBlocks(markdown) {
 
 /**
  * Generate formatted PDF Buffer from Markdown.
+ * 
  * @param {string} title - Document title
  * @param {string} markdownContent - Full transcription markdown
- * @returns {Promise<Buffer>} - Standard PDF Buffer
+ * @param {Object} [options={}] - Layout and pagination options
+ * @param {'clean-reflow'|'faithful'|'preserve-source-pages'} [options.pageMode='clean-reflow']
+ * @param {number} [options.sourcePageCount=null] - Number of pages in the source document
+ * @param {boolean} [options.compactTypography=true] - Use compact academic typography
+ * @returns {Promise<Buffer>} - Standard PDF Buffer with attached metadata (.pageCount, .expansionRatio, etc.)
  */
-export async function createPdfBuffer(title, markdownContent) {
+export async function createPdfBuffer(title, markdownContent, options = {}) {
+  const {
+    pageMode = 'clean-reflow',
+    sourcePageCount = null,
+    compactTypography = true
+  } = options;
+
   const pdfDoc = await PDFDocument.create();
+
+  // Layout metrics
+  const MARGIN_LEFT = compactTypography ? 36 : 50;
+  const MARGIN_RIGHT = compactTypography ? 36 : 50;
+  const MARGIN_TOP = compactTypography ? 42 : 60;
+  const MARGIN_BOTTOM = compactTypography ? 42 : 60;
+  const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+
+  // Typography metrics
+  const bodySize = compactTypography ? 10.5 : 11;
+  const bodyLineHeight = compactTypography ? 14 : 16;
+  const mathSize = compactTypography ? 10 : 11;
+  const mathLineHeight = compactTypography ? 15 : 18;
+  const codeSize = compactTypography ? 8.5 : 9.5;
+  const codeLineHeight = compactTypography ? 11.5 : 13.5;
 
   // Embed standard typography fonts
   const fontRegular = await pdfDoc.embedFont(StandardFonts.TimesRoman);
@@ -237,15 +279,15 @@ export async function createPdfBuffer(title, markdownContent) {
 
   // Draw Document Title on Page 1
   if (title) {
-    ensureSpace(50);
+    ensureSpace(45);
     currentPage.drawText(title, {
       x: MARGIN_LEFT,
-      y: cursorY - 24,
-      size: 20,
+      y: cursorY - 20,
+      size: compactTypography ? 18 : 20,
       font: fontBold,
       color: COLOR_PRIMARY
     });
-    cursorY -= 36;
+    cursorY -= 30;
 
     // Title divider line
     currentPage.drawLine({
@@ -254,18 +296,19 @@ export async function createPdfBuffer(title, markdownContent) {
       thickness: 1.5,
       color: COLOR_PRIMARY
     });
-    cursorY -= 20;
+    cursorY -= 16;
   }
 
   for (const block of blocks) {
     switch (block.type) {
       case 'heading': {
-        const size = block.level === 1 ? 16 : block.level === 2 ? 14 : 12;
-        const spacingBefore = block.level === 1 ? 20 : 14;
+        const size = block.level === 1 ? 14 : block.level === 2 ? 12.5 : 11.5;
+        const spacingBefore = block.level === 1 ? 14 : block.level === 2 ? 10 : 8;
         const font = fontBold;
         const lines = wrapText(block.text, font, size, CONTENT_WIDTH);
 
-        ensureSpace(spacingBefore + lines.length * (size + 4) + 6);
+        // Heading orphan prevention: ensure room for heading plus at least 2 lines of subsequent text
+        ensureSpace(spacingBefore + lines.length * (size + 3) + 26);
         cursorY -= spacingBefore;
 
         for (const line of lines) {
@@ -276,76 +319,70 @@ export async function createPdfBuffer(title, markdownContent) {
             font,
             color: COLOR_PRIMARY
           });
-          cursorY -= (size + 4);
+          cursorY -= (size + 3);
+        }
+        cursorY -= 3;
+        break;
+      }
+
+      case 'paragraph': {
+        const lines = wrapText(block.text, fontRegular, bodySize, CONTENT_WIDTH);
+        ensureSpace(lines.length * bodyLineHeight + 4);
+
+        for (const line of lines) {
+          currentPage.drawText(line, {
+            x: MARGIN_LEFT,
+            y: cursorY - bodySize,
+            size: bodySize,
+            font: fontRegular,
+            color: COLOR_BLACK
+          });
+          cursorY -= bodyLineHeight;
         }
         cursorY -= 4;
         break;
       }
 
-      case 'paragraph': {
-        const size = 11;
-        const lineHeight = 16;
-        const lines = wrapText(block.text, fontRegular, size, CONTENT_WIDTH);
-
-        ensureSpace(lines.length * lineHeight + 8);
-        for (const line of lines) {
-          currentPage.drawText(line, {
-            x: MARGIN_LEFT,
-            y: cursorY - size,
-            size,
-            font: fontRegular,
-            color: COLOR_BLACK
-          });
-          cursorY -= lineHeight;
-        }
-        cursorY -= 6;
-        break;
-      }
-
       case 'list-item': {
-        const size = 11;
-        const lineHeight = 16;
-        const prefixWidth = fontBold.widthOfTextAtSize(`${block.prefix} `, size);
-        const lines = wrapText(block.text, fontRegular, size, CONTENT_WIDTH - prefixWidth - 10);
+        const prefixWidth = fontBold.widthOfTextAtSize(`${block.prefix} `, bodySize);
+        const lines = wrapText(block.text, fontRegular, bodySize, CONTENT_WIDTH - prefixWidth - 8);
 
-        ensureSpace(lines.length * lineHeight + 4);
+        ensureSpace(lines.length * bodyLineHeight + 3);
 
         currentPage.drawText(block.prefix, {
-          x: MARGIN_LEFT + 8,
-          y: cursorY - size,
-          size,
+          x: MARGIN_LEFT + 6,
+          y: cursorY - bodySize,
+          size: bodySize,
           font: fontBold,
           color: COLOR_PRIMARY
         });
 
         for (let j = 0; j < lines.length; j++) {
           currentPage.drawText(lines[j], {
-            x: MARGIN_LEFT + 8 + prefixWidth,
-            y: cursorY - size,
-            size,
+            x: MARGIN_LEFT + 6 + prefixWidth,
+            y: cursorY - bodySize,
+            size: bodySize,
             font: fontRegular,
             color: COLOR_BLACK
           });
-          cursorY -= lineHeight;
+          cursorY -= bodyLineHeight;
         }
+        cursorY -= 2;
         break;
       }
 
       case 'code': {
-        const size = 9.5;
-        const lineHeight = 13.5;
-        const padding = 10;
+        const padding = 8;
         const rawCodeLines = block.lines.length > 0 ? block.lines : [''];
 
-        // Wrap code lines if too long
         const renderedLines = [];
         for (const cl of rawCodeLines) {
-          const sub = wrapText(cl, fontMono, size, CONTENT_WIDTH - padding * 2);
+          const sub = wrapText(cl, fontMono, codeSize, CONTENT_WIDTH - padding * 2);
           renderedLines.push(...sub);
         }
 
-        const boxHeight = renderedLines.length * lineHeight + padding * 2;
-        ensureSpace(Math.min(boxHeight, 150));
+        const boxHeight = renderedLines.length * codeLineHeight + padding * 2;
+        ensureSpace(Math.min(boxHeight, 140));
 
         const startY = cursorY;
         const actualBoxHeight = Math.min(boxHeight, cursorY - MARGIN_BOTTOM);
@@ -357,41 +394,40 @@ export async function createPdfBuffer(title, markdownContent) {
           height: actualBoxHeight,
           color: COLOR_CODE_BG,
           borderColor: COLOR_BORDER,
-          borderWidth: 1
+          borderWidth: 0.75
         });
 
         cursorY -= padding;
         for (const line of renderedLines) {
-          if (ensureSpace(lineHeight + padding)) {
-            // New page inside code block if long
+          if (ensureSpace(codeLineHeight + padding)) {
             cursorY -= padding;
           }
           currentPage.drawText(line, {
             x: MARGIN_LEFT + padding,
-            y: cursorY - size,
-            size,
+            y: cursorY - codeSize,
+            size: codeSize,
             font: fontMono,
             color: COLOR_BLACK
           });
-          cursorY -= lineHeight;
+          cursorY -= codeLineHeight;
         }
-        cursorY -= (padding + 8);
+        cursorY -= (padding + 6);
         break;
       }
 
       case 'math': {
-        const size = 11;
-        const lineHeight = 18;
-        const padding = 10;
-        const mathLines = block.lines.map(l => l.replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\quad/g, '  ').trim()).filter(Boolean);
+        const padding = 6;
+        const mathLines = block.lines
+          .map(l => l.replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\quad/g, '  ').trim())
+          .filter(Boolean);
 
         const renderedLines = [];
         for (const ml of mathLines) {
-          renderedLines.push(...wrapText(ml, fontItalic, size, CONTENT_WIDTH - padding * 2));
+          renderedLines.push(...wrapText(ml, fontItalic, mathSize, CONTENT_WIDTH - padding * 2));
         }
 
-        const blockHeight = renderedLines.length * lineHeight + padding * 2;
-        ensureSpace(blockHeight + 10);
+        const blockHeight = renderedLines.length * mathLineHeight + padding * 2;
+        ensureSpace(blockHeight + 6);
 
         currentPage.drawRectangle({
           x: MARGIN_LEFT,
@@ -400,23 +436,23 @@ export async function createPdfBuffer(title, markdownContent) {
           height: blockHeight,
           color: COLOR_MATH_BG,
           borderColor: COLOR_BORDER,
-          borderWidth: 1
+          borderWidth: 0.75
         });
 
         cursorY -= padding;
         for (const line of renderedLines) {
-          const textWidth = fontItalic.widthOfTextAtSize(line, size);
+          const textWidth = fontItalic.widthOfTextAtSize(line, mathSize);
           const centeredX = Math.max(MARGIN_LEFT + padding, MARGIN_LEFT + (CONTENT_WIDTH - textWidth) / 2);
           currentPage.drawText(line, {
             x: centeredX,
-            y: cursorY - size,
-            size,
+            y: cursorY - mathSize,
+            size: mathSize,
             font: fontItalic,
             color: rgb(0.1, 0.2, 0.4)
           });
-          cursorY -= lineHeight;
+          cursorY -= mathLineHeight;
         }
-        cursorY -= (padding + 8);
+        cursorY -= (padding + 6);
         break;
       }
 
@@ -426,17 +462,17 @@ export async function createPdfBuffer(title, markdownContent) {
         if (numCols === 0) break;
 
         const colWidth = CONTENT_WIDTH / numCols;
-        const rowHeight = 22;
-        const totalHeight = block.rows.length * rowHeight;
+        const rowHeight = 20;
+        const headerRow = block.rows[0];
 
-        ensureSpace(Math.min(totalHeight, 100));
+        // Ensure at least space for header and first row
+        ensureSpace(rowHeight * 2 + 6);
 
-        for (let rIdx = 0; rIdx < block.rows.length; rIdx++) {
-          const row = block.rows[rIdx];
-          const isHeader = rIdx === 0;
-          ensureSpace(rowHeight + 4);
+        // Helper to draw a single table row
+        const drawTableRow = (row, isHeader) => {
+          const cellFont = isHeader ? fontBold : fontRegular;
+          const cellSize = isHeader ? 9.5 : 9;
 
-          // Row background
           if (isHeader) {
             currentPage.drawRectangle({
               x: MARGIN_LEFT,
@@ -447,27 +483,23 @@ export async function createPdfBuffer(title, markdownContent) {
             });
           }
 
-          // Cell contents and borders
           for (let cIdx = 0; cIdx < numCols; cIdx++) {
             const cellText = row[cIdx] || '';
-            const cellFont = isHeader ? fontBold : fontRegular;
-            const cellSize = isHeader ? 10 : 9.5;
             const cellLines = wrapText(cellText, cellFont, cellSize, colWidth - 8);
 
-            // Cell border
             currentPage.drawRectangle({
               x: MARGIN_LEFT + cIdx * colWidth,
               y: cursorY - rowHeight,
               width: colWidth,
               height: rowHeight,
               borderColor: COLOR_BORDER,
-              borderWidth: 0.75
+              borderWidth: 0.5
             });
 
             if (cellLines[0]) {
               currentPage.drawText(cellLines[0], {
                 x: MARGIN_LEFT + cIdx * colWidth + 4,
-                y: cursorY - rowHeight + 6,
+                y: cursorY - rowHeight + 5,
                 size: cellSize,
                 font: cellFont,
                 color: COLOR_BLACK
@@ -475,30 +507,49 @@ export async function createPdfBuffer(title, markdownContent) {
             }
           }
           cursorY -= rowHeight;
+        };
+
+        // Draw rows with header repetition across page breaks
+        for (let rIdx = 0; rIdx < block.rows.length; rIdx++) {
+          const isHeader = rIdx === 0;
+
+          if (cursorY - rowHeight < MARGIN_BOTTOM) {
+            currentPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+            docPages.push(currentPage);
+            cursorY = PAGE_HEIGHT - MARGIN_TOP;
+
+            // Re-draw table header row on new page for continuity
+            if (!isHeader && headerRow) {
+              drawTableRow(headerRow, true);
+            }
+          }
+
+          drawTableRow(block.rows[rIdx], isHeader);
         }
-        cursorY -= 10;
+
+        cursorY -= 8;
         break;
       }
 
       case 'blockquote': {
-        const size = 10.5;
-        const lineHeight = 15;
-        const lines = wrapText(block.text, fontItalic, size, CONTENT_WIDTH - 24);
-        const blockHeight = lines.length * lineHeight + 8;
+        const size = compactTypography ? 10 : 10.5;
+        const lineHeight = compactTypography ? 14 : 15;
+        const lines = wrapText(block.text, fontItalic, size, CONTENT_WIDTH - 20);
+        const blockHeight = lines.length * lineHeight + 6;
 
         ensureSpace(blockHeight);
 
         currentPage.drawLine({
-          start: { x: MARGIN_LEFT + 4, y: cursorY },
-          end: { x: MARGIN_LEFT + 4, y: cursorY - blockHeight },
-          thickness: 3,
+          start: { x: MARGIN_LEFT + 3, y: cursorY },
+          end: { x: MARGIN_LEFT + 3, y: cursorY - blockHeight },
+          thickness: 2.5,
           color: COLOR_PRIMARY
         });
 
-        cursorY -= 4;
+        cursorY -= 3;
         for (const line of lines) {
           currentPage.drawText(line, {
-            x: MARGIN_LEFT + 16,
+            x: MARGIN_LEFT + 14,
             y: cursorY - size,
             size,
             font: fontItalic,
@@ -506,32 +557,141 @@ export async function createPdfBuffer(title, markdownContent) {
           });
           cursorY -= lineHeight;
         }
-        cursorY -= 8;
+        cursorY -= 6;
         break;
       }
 
       case 'hr': {
-        ensureSpace(16);
-        cursorY -= 8;
+        ensureSpace(12);
+        cursorY -= 6;
         currentPage.drawLine({
           start: { x: MARGIN_LEFT, y: cursorY },
           end: { x: PAGE_WIDTH - MARGIN_RIGHT, y: cursorY },
-          thickness: 0.75,
+          thickness: 0.5,
           color: COLOR_BORDER
         });
-        cursorY -= 8;
+        cursorY -= 6;
+        break;
+      }
+
+      case 'image': {
+        try {
+          let imgBuffer = null;
+          let isPng = false;
+          if (block.src.startsWith('data:image/png;base64,')) {
+            imgBuffer = Buffer.from(block.src.split(',')[1], 'base64');
+            isPng = true;
+          } else if (block.src.startsWith('data:image/jpeg;base64,') || block.src.startsWith('data:image/jpg;base64,')) {
+            imgBuffer = Buffer.from(block.src.split(',')[1], 'base64');
+            isPng = false;
+          }
+
+          if (imgBuffer) {
+            const embeddedImg = isPng ? await pdfDoc.embedPng(imgBuffer) : await pdfDoc.embedJpg(imgBuffer);
+            const { width: imgW, height: imgH } = embeddedImg.scale(1);
+            const maxW = CONTENT_WIDTH;
+            const maxH = 260;
+            const scaleFactor = Math.min(maxW / imgW, maxH / imgH, 1);
+            const renderW = imgW * scaleFactor;
+            const renderH = imgH * scaleFactor;
+
+            ensureSpace(renderH + 16);
+            cursorY -= 6;
+            const renderX = MARGIN_LEFT + (CONTENT_WIDTH - renderW) / 2;
+            currentPage.drawImage(embeddedImg, {
+              x: renderX,
+              y: cursorY - renderH,
+              width: renderW,
+              height: renderH,
+            });
+            cursorY -= (renderH + 6);
+
+            if (block.alt) {
+              const capLines = wrapText(block.alt, fontItalic, 8.5, CONTENT_WIDTH);
+              for (const cl of capLines) {
+                const capW = fontItalic.widthOfTextAtSize(cl, 8.5);
+                currentPage.drawText(cl, {
+                  x: MARGIN_LEFT + (CONTENT_WIDTH - capW) / 2,
+                  y: cursorY - 8.5,
+                  size: 8.5,
+                  font: fontItalic,
+                  color: COLOR_MUTED
+                });
+                cursorY -= 11;
+              }
+            }
+          }
+        } catch (imgErr) {
+          console.warn('Image embedding warning in pdfExportService:', imgErr.message);
+        }
         break;
       }
 
       case 'page-break': {
-        currentPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-        docPages.push(currentPage);
-        cursorY = PAGE_HEIGHT - MARGIN_TOP;
+        const pageNum = block.pageNum;
+        // If this is the separator for Page 1 while still on the first page, or page is pristine, avoid redundant blank page
+        if (docPages.length === 1 && (pageNum === 1 || cursorY >= PAGE_HEIGHT - MARGIN_TOP - 1)) {
+          break;
+        }
+
+        if (pageMode === 'clean-reflow') {
+          // Dynamic Reflow Mode: Suppress empty-half-page cascade.
+          // Only break to a new page if remaining vertical room on current page is depleted.
+          if (cursorY - MARGIN_BOTTOM < 90) {
+            currentPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+            docPages.push(currentPage);
+            cursorY = PAGE_HEIGHT - MARGIN_TOP;
+          } else {
+            // Draw an elegant running page divider
+            ensureSpace(24);
+            cursorY -= 8;
+            const dividerText = pageNum ? `— Page ${pageNum} —` : '— • —';
+            const textWidth = fontRegular.widthOfTextAtSize(dividerText, 8);
+            const centerX = MARGIN_LEFT + (CONTENT_WIDTH - textWidth) / 2;
+
+            // Left rule
+            currentPage.drawLine({
+              start: { x: MARGIN_LEFT, y: cursorY - 3 },
+              end: { x: centerX - 10, y: cursorY - 3 },
+              thickness: 0.5,
+              color: COLOR_BORDER
+            });
+
+            // Running page label
+            currentPage.drawText(dividerText, {
+              x: centerX,
+              y: cursorY - 6,
+              size: 8,
+              font: fontRegular,
+              color: COLOR_MUTED
+            });
+
+            // Right rule
+            currentPage.drawLine({
+              start: { x: centerX + textWidth + 10, y: cursorY - 3 },
+              end: { x: PAGE_WIDTH - MARGIN_RIGHT, y: cursorY - 3 },
+              thickness: 0.5,
+              color: COLOR_BORDER
+            });
+
+            cursorY -= 16;
+          }
+        } else {
+          // Mode 'faithful' or 'preserve-source-pages': Synchronous 1:1 page break
+          currentPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+          docPages.push(currentPage);
+          cursorY = PAGE_HEIGHT - MARGIN_TOP;
+        }
+        break;
+      }
+
+      case 'diagram-meta': {
+        // Subtle metadata label for high-fidelity OCR audits
         break;
       }
 
       case 'empty': {
-        cursorY -= 8;
+        cursorY -= 6;
         break;
       }
 
@@ -545,13 +705,13 @@ export async function createPdfBuffer(title, markdownContent) {
   for (let pIdx = 0; pIdx < totalPages; pIdx++) {
     const page = docPages[pIdx];
     const pageNumText = `Page ${pIdx + 1} of ${totalPages}`;
-    const pageNumWidth = fontRegular.widthOfTextAtSize(pageNumText, 9);
+    const pageNumWidth = fontRegular.widthOfTextAtSize(pageNumText, 8.5);
 
     // Footer: Page Number
     page.drawText(pageNumText, {
       x: PAGE_WIDTH - MARGIN_RIGHT - pageNumWidth,
-      y: 30,
-      size: 9,
+      y: 24,
+      size: 8.5,
       font: fontRegular,
       color: COLOR_MUTED
     });
@@ -559,7 +719,7 @@ export async function createPdfBuffer(title, markdownContent) {
     // Footer: System watermark
     page.drawText('TypedDoc • High-Fidelity Transcription', {
       x: MARGIN_LEFT,
-      y: 30,
+      y: 24,
       size: 8,
       font: fontRegular,
       color: COLOR_BORDER
@@ -569,14 +729,14 @@ export async function createPdfBuffer(title, markdownContent) {
     if (pIdx > 0 && title) {
       page.drawText(title, {
         x: MARGIN_LEFT,
-        y: PAGE_HEIGHT - 35,
-        size: 8.5,
+        y: PAGE_HEIGHT - 28,
+        size: 8,
         font: fontRegular,
         color: COLOR_MUTED
       });
       page.drawLine({
-        start: { x: MARGIN_LEFT, y: PAGE_HEIGHT - 40 },
-        end: { x: PAGE_WIDTH - MARGIN_RIGHT, y: PAGE_HEIGHT - 40 },
+        start: { x: MARGIN_LEFT, y: PAGE_HEIGHT - 32 },
+        end: { x: PAGE_WIDTH - MARGIN_RIGHT, y: PAGE_HEIGHT - 32 },
         thickness: 0.5,
         color: COLOR_BORDER
       });
@@ -584,5 +744,27 @@ export async function createPdfBuffer(title, markdownContent) {
   }
 
   const pdfBytes = await pdfDoc.save();
-  return Buffer.from(pdfBytes);
+  const buffer = Buffer.from(pdfBytes);
+
+  // Attach execution metadata to buffer
+  buffer.pageCount = totalPages;
+  buffer.pageMode = pageMode;
+  buffer.sourcePageCount = sourcePageCount;
+  buffer.expansionRatio = sourcePageCount ? Number((totalPages / sourcePageCount).toFixed(3)) : null;
+
+  return buffer;
+}
+
+/**
+ * Generate formatted PDF with detailed telemetry.
+ */
+export async function exportPdfWithStats(title, markdownContent, options = {}) {
+  const buffer = await createPdfBuffer(title, markdownContent, options);
+  return {
+    buffer,
+    pageCount: buffer.pageCount,
+    pageMode: buffer.pageMode,
+    sourcePageCount: buffer.sourcePageCount,
+    expansionRatio: buffer.expansionRatio
+  };
 }

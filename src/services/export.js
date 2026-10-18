@@ -299,7 +299,9 @@ export const exportToDocx = async (title, content) => {
   saveAs(blob, `${title}.docx`);
 }
 
-export async function exportToPdf(title, content) {
+export async function exportToPdf(title, content, options = {}) {
+  const { pageMode = 'clean-reflow' } = options;
+
   // Find the dedicated print container, or generate from content as fallback
   let printEl = document.getElementById('pdf-export-content');
   let clone;
@@ -346,6 +348,9 @@ export async function exportToPdf(title, content) {
       } else if (block.type === 'separator') {
         const sep = document.createElement('div');
         sep.className = 'md-page-separator';
+        const span = document.createElement('span');
+        span.textContent = block.text ? block.text.replace(/^-+\s*|\s*-+$/g, '') : 'Page';
+        sep.appendChild(span);
         clone.appendChild(sep);
       } else if (block.type === 'table') {
         if (block.rows && block.rows.length > 0) {
@@ -395,10 +400,10 @@ export async function exportToPdf(title, content) {
   // Inject print-specific CSS
   const styleEl = document.createElement('style');
   styleEl.innerHTML = `
-    /* Screen preview styling for the clone just in case it's visible for a split second */
+    /* Screen preview styling for the clone */
     #active-print-container {
       padding: 20px;
-      opacity: 0.01; /* Nearly invisible on screen but prints fine */
+      opacity: 0.01;
       pointer-events: none;
     }
 
@@ -424,10 +429,10 @@ export async function exportToPdf(title, content) {
         padding: 0 !important;
       }
 
-      /* Page setup */
+      /* Page setup: compact 12mm 14mm in reflow */
       @page {
         size: A4;
-        margin: 15mm 18mm;
+        margin: ${pageMode === 'clean-reflow' ? '12mm 14mm' : '15mm 18mm'};
       }
 
       /* Reset everything inside print container */
@@ -443,27 +448,68 @@ export async function exportToPdf(title, content) {
 
       /* Layout & Typography */
       #active-print-container { 
-        font-size: 12pt;
-        line-height: 1.7;
+        font-size: ${pageMode === 'clean-reflow' ? '10.5pt' : '11.5pt'} !important;
+        line-height: ${pageMode === 'clean-reflow' ? '1.35' : '1.6'} !important;
       }
 
-      .print-header h1 { font-size: 24pt; font-weight: 800; border-bottom: 2px solid black; padding-bottom: 0.3em; margin-bottom: 1em; }
+      .print-header h1 { 
+        font-size: 20pt !important; 
+        font-weight: 800; 
+        border-bottom: 1.5pt solid black; 
+        padding-bottom: 0.25em; 
+        margin-bottom: 0.8em; 
+      }
       
-      #active-print-container .md-h1 { font-size: 22pt; font-weight: 800; margin: 1.2em 0 0.6em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
-      #active-print-container .md-h2 { font-size: 18pt; font-weight: 700; margin: 1em 0 0.5em; }
-      #active-print-container .md-h3 { font-size: 15pt; font-weight: 700; margin: 0.8em 0 0.4em; }
-      #active-print-container .md-h4 { font-size: 13pt; font-weight: 700; margin: 0.6em 0 0.3em; }
+      #active-print-container .md-h1 { 
+        font-size: 15pt !important; 
+        font-weight: 800; 
+        margin: 0.8em 0 0.35em !important; 
+        border-bottom: 1px solid #ccc; 
+        padding-bottom: 0.2em; 
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+      #active-print-container .md-h2 { 
+        font-size: 13pt !important; 
+        font-weight: 700; 
+        margin: 0.65em 0 0.25em !important; 
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+      #active-print-container .md-h3 { 
+        font-size: 11.5pt !important; 
+        font-weight: 700; 
+        margin: 0.5em 0 0.2em !important; 
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+      #active-print-container .md-h4 { 
+        font-size: 10.5pt !important; 
+        font-weight: 700; 
+        margin: 0.4em 0 0.2em !important; 
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
 
-      #active-print-container .md-paragraph { margin-bottom: 0.8em; text-align: justify; }
+      #active-print-container .md-paragraph { 
+        margin-bottom: 0.45em !important; 
+        text-align: justify; 
+      }
       #active-print-container strong { font-weight: bold; }
       
-      #active-print-container .md-ul, #active-print-container .md-ol { margin: 0.8em 0; padding-left: 2em; }
-      #active-print-container li { margin-bottom: 0.4em; }
+      #active-print-container .md-ul, #active-print-container .md-ol { 
+        margin: 0.5em 0 !important; 
+        padding-left: 1.6em !important; 
+      }
+      #active-print-container li { 
+        margin-bottom: 0.25em !important; 
+      }
 
       #active-print-container .md-math-block {
-        page-break-inside: avoid;
-        margin: 1em 0;
-        padding: 0.8em;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+        margin: 0.5em 0 !important;
+        padding: 0.4em 0.6em !important;
         background: #f9f9f9 !important;
         border: 1px solid #ddd !important;
         border-radius: 4px;
@@ -473,32 +519,107 @@ export async function exportToPdf(title, content) {
       #active-print-container .md-code-inline {
         font-family: monospace !important;
         background: #f1f1f1 !important;
-        padding: 2px 4px;
+        padding: 1px 3px !important;
         border-radius: 3px;
-        font-size: 0.9em;
+        font-size: 0.88em !important;
       }
       
       #active-print-container .md-code-block {
         font-family: monospace !important;
         background: #f1f1f1 !important;
-        padding: 1em;
+        padding: 0.6em !important;
         border-radius: 4px;
-        font-size: 10pt;
-        margin: 1em 0;
-        page-break-inside: avoid;
+        font-size: 8.5pt !important;
+        line-height: 1.2 !important;
+        margin: 0.5em 0 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
       }
       #active-print-container .md-code-block * { font-family: monospace !important; }
 
-      #active-print-container .md-table { width: 100%; border-collapse: collapse; margin: 1em 0; }
-      #active-print-container .md-table th, #active-print-container .md-table td { border: 1px solid #ccc; padding: 8px; }
-      #active-print-container .md-table th { background: #eee !important; font-weight: bold; }
+      #active-print-container .md-table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        margin: 0.6em 0 !important; 
+        break-inside: auto;
+      }
+      #active-print-container .md-table thead {
+        display: table-header-group !important;
+      }
+      #active-print-container .md-table tr {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+      #active-print-container .md-table th, #active-print-container .md-table td { 
+        border: 1px solid #ccc; 
+        padding: 4px 6px !important; 
+        font-size: 9pt !important; 
+      }
+      #active-print-container .md-table th { 
+        background: #eee !important; 
+        font-weight: bold; 
+      }
 
-      #active-print-container .md-blockquote { border-left: 4px solid #ccc; margin: 1em 0; padding-left: 1em; color: #555 !important; }
-      #active-print-container .md-hr { border: none; border-top: 1px solid #ccc; margin: 1.5em 0; }
+      #active-print-container .md-blockquote { 
+        border-left: 3px solid #ccc; 
+        margin: 0.6em 0 !important; 
+        padding-left: 0.8em !important; 
+        color: #555 !important; 
+      }
+      #active-print-container .md-hr { 
+        border: none; 
+        border-top: 1px solid #ccc; 
+        margin: 0.8em 0 !important; 
+      }
       
-      #active-print-container .md-image { max-width: 100%; height: auto; display: block; margin: 1em auto; }
-      #active-print-container .md-page-separator { break-before: page; page-break-before: always; height: 0; overflow: hidden; margin: 0; }
-      #active-print-container .print-header + .md-page-separator { break-before: auto; page-break-before: auto; }
+      #active-print-container .md-image { 
+        max-width: 100%; 
+        height: auto; 
+        display: block; 
+        margin: 0.8em auto !important; 
+        break-inside: avoid !important;
+      }
+      
+      /* In clean-reflow mode: soft running page dividers, preventing double-pagination */
+      ${pageMode === 'clean-reflow' ? `
+      #active-print-container .md-page-separator {
+        break-before: auto !important;
+        page-break-before: auto !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        margin: 1.2em 0 0.8em !important;
+        color: #777 !important;
+        font-size: 8pt !important;
+        font-weight: 500 !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+      #active-print-container .md-page-separator span {
+        padding: 0 0.8em;
+        background: white;
+      }
+      #active-print-container .md-page-separator::before,
+      #active-print-container .md-page-separator::after {
+        content: '';
+        flex: 1;
+        border-bottom: 0.5pt solid #ddd;
+      }
+      ` : `
+      /* Faithful / Preserve-source-pages mode: Strict page breaks */
+      #active-print-container .md-page-separator { 
+        break-before: page !important; 
+        page-break-before: always !important; 
+        height: 0 !important; 
+        overflow: hidden !important; 
+        margin: 0 !important; 
+      }
+      #active-print-container .print-header + .md-page-separator { 
+        break-before: auto !important; 
+        page-break-before: auto !important; 
+      }
+      `}
       
       /* Hide top header/footer URLs that browsers insert */
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -506,8 +627,15 @@ export async function exportToPdf(title, content) {
   `;
   document.head.appendChild(styleEl);
 
-  // Wait a moment for styles to apply
-  await new Promise(r => setTimeout(r, 100));
+  // Deterministic font and rendering readiness safeguard
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Continue if font readiness promise fails
+    }
+  }
+  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 120)));
 
   // Trigger the print dialog!
   window.print();

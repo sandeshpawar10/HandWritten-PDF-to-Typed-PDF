@@ -4,12 +4,13 @@ import crypto from 'crypto';
 import { PDFDocument } from 'pdf-lib';
 import { createDocxBuffer } from './docxExportService.js';
 import { createPdfBuffer } from './pdfExportService.js';
+import { verifyPdfBuffer } from './pdfVerifier.js';
 import { transcribePage, maskKey } from './geminiPool.js';
 import { parseBase64Payload, LIMITS } from '../utils/validation.js';
 import { markdownToAst } from './ocrAst.js';
 import { verifyPageAst } from './ocrVerifier.js';
 
-const OCR_PROMPT_VERSION = 'v2.1_academic_ast';
+const OCR_PROMPT_VERSION = 'v2.2_diagram_budget';
 
 /**
  * Persistent content-addressed and atomic page cache.
@@ -126,10 +127,12 @@ Transcribe the provided document page into clean, publication-ready GitHub-flavo
    - For multi-line aligned systems or derivations, format with clear vertical steps or \\begin{aligned} ... \\end{aligned} inside $$ ... $$.
    - Use standard LaTeX symbols: \\times, \\cdot, \\frac{a}{b}, \\sum, \\int, \\in, \\subseteq, \\cup, \\cap, \\oplus, \\land, \\lor, \\neg.
 
-3. DIAGRAMS, FLOWCHARTS & TREES (ASCII ART):
+3. DIAGRAMS, FLOWCHARTS & TREES (ASCII ART & METADATA):
    - When hand-drawn diagrams, trees, state machines, graphs, flowcharts, or Venn diagrams appear:
    - Reconstruct them accurately as clean ASCII diagrams inside fenced code blocks (\`\`\`text).
    - Show all nodes, vertices, edges, directions, weights, and labels.
+   - Attach a metadata tag immediately preceding the diagram block:
+     [DIAGRAM_METADATA: {"type": "graph|tree|automaton|venn|circuit|flowchart", "title": "Brief Title", "confidence": 0.9}]
    - NEVER omit a diagram or write "[Diagram omitted]". Reconstruct the diagram's exact logic.
 
 4. TABLES & GRIDS:
@@ -207,6 +210,7 @@ export async function runGeminiOCR(body, onProgress) {
   // Validate magic bytes, limits, and payload
   const { mimeType, buffer } = parseBase64Payload(rawData);
   const isPdf = mimeType === 'application/pdf';
+  const pageMode = body.pageMode || body.page_mode || body.document?.pageMode || 'clean-reflow';
 
   if (isPdf) {
     console.log('Loading PDF document with pdf-lib...');
@@ -387,9 +391,25 @@ export async function runGeminiOCR(body, onProgress) {
 
     // Generate formatted PDF document
     let formattedPdf = null;
+    let pdfVerification = null;
     try {
-      const pdfBuffer = await createPdfBuffer('Transcribed Notes', fullMarkdown);
+      const pdfBuffer = await createPdfBuffer('Transcribed Notes', fullMarkdown, {
+        pageMode,
+        sourcePageCount: totalPages
+      });
       formattedPdf = pdfBuffer.toString('base64');
+
+      try {
+        pdfVerification = await verifyPdfBuffer(pdfBuffer, {
+          sourcePageCount: totalPages,
+          pageMode
+        });
+        if (!pdfVerification.isValid) {
+          console.warn('PDF verification warnings:', pdfVerification.warnings);
+        }
+      } catch (vErr) {
+        console.warn('PDF verification run warning:', vErr.message);
+      }
     } catch (pdfErr) {
       console.warn('PDF generation warning:', pdfErr.message);
     }
@@ -411,7 +431,9 @@ export async function runGeminiOCR(body, onProgress) {
       total_pages: totalPages,
       totalPages,
       pages_processed: totalPages,
-      pagesProcessed: totalPages
+      pagesProcessed: totalPages,
+      pdf_verification: pdfVerification,
+      pdfVerification
     };
 
   } else {
@@ -424,6 +446,7 @@ export async function runGeminiOCR(body, onProgress) {
       console.log('Serving single image from cache.');
       let formattedDocx = null;
       let formattedPdf = null;
+      let pdfVerification = null;
       try {
         const docxBuffer = await createDocxBuffer('Transcribed Note', cachedImage);
         formattedDocx = docxBuffer.toString('base64');
@@ -431,8 +454,15 @@ export async function runGeminiOCR(body, onProgress) {
         console.warn('DOCX warning:', e.message);
       }
       try {
-        const pdfBuffer = await createPdfBuffer('Transcribed Note', cachedImage);
+        const pdfBuffer = await createPdfBuffer('Transcribed Note', cachedImage, {
+          pageMode,
+          sourcePageCount: 1
+        });
         formattedPdf = pdfBuffer.toString('base64');
+        pdfVerification = await verifyPdfBuffer(pdfBuffer, {
+          sourcePageCount: 1,
+          pageMode
+        });
       } catch (e) {
         console.warn('PDF warning:', e.message);
       }
@@ -446,7 +476,9 @@ export async function runGeminiOCR(body, onProgress) {
         total_pages: 1,
         totalPages: 1,
         pages_processed: 1,
-        pagesProcessed: 1
+        pagesProcessed: 1,
+        pdf_verification: pdfVerification,
+        pdfVerification
       };
     }
 
@@ -489,6 +521,7 @@ export async function runGeminiOCR(body, onProgress) {
 
     let formattedDocx = null;
     let formattedPdf = null;
+    let pdfVerification = null;
     try {
       const docxBuffer = await createDocxBuffer('Transcribed Note', pageText);
       formattedDocx = docxBuffer.toString('base64');
@@ -496,8 +529,15 @@ export async function runGeminiOCR(body, onProgress) {
       console.warn('DOCX warning:', e.message);
     }
     try {
-      const pdfBuffer = await createPdfBuffer('Transcribed Note', pageText);
+      const pdfBuffer = await createPdfBuffer('Transcribed Note', pageText, {
+        pageMode,
+        sourcePageCount: 1
+      });
       formattedPdf = pdfBuffer.toString('base64');
+      pdfVerification = await verifyPdfBuffer(pdfBuffer, {
+        sourcePageCount: 1,
+        pageMode
+      });
     } catch (e) {
       console.warn('PDF warning:', e.message);
     }
@@ -519,7 +559,9 @@ export async function runGeminiOCR(body, onProgress) {
       total_pages: 1,
       totalPages: 1,
       pages_processed: 1,
-      pagesProcessed: 1
+      pagesProcessed: 1,
+      pdf_verification: pdfVerification,
+      pdfVerification
     };
   }
 }

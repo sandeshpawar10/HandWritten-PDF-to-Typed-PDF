@@ -20,6 +20,7 @@ export function Editor({ doc, onBack, versions }) {
   const [isExporting, setIsExporting] = useState(null); // tracks which format is exporting
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [pdfPageMode, setPdfPageMode] = useState('clean-reflow'); // 'clean-reflow' | 'faithful'
   // Issue #10: Replace confirm() with proper modal
   const [restoreVersion, setRestoreVersion] = useState(null);
 
@@ -164,7 +165,7 @@ export function Editor({ doc, onBack, versions }) {
         setMode('preview');
         // Wait for React to render the MarkdownPreview inside the print container
         await new Promise(r => setTimeout(r, 800));
-        await exportToPdf(title, content);
+        await exportToPdf(title, content, { pageMode: pdfPageMode });
       } else {
         await exportToTxt(title, content);
       }
@@ -235,6 +236,35 @@ export function Editor({ doc, onBack, versions }) {
               {isExporting === 'txt' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
               {isExporting === 'txt' ? '…' : 'TXT'}
             </motion.button>
+          </div>
+
+          {/* PDF Page Mode Selector */}
+          <div className="mt-3 pt-2.5 border-t border-[#E8DFD0]/60 flex items-center justify-between text-[11px]">
+            <span className="text-[#8C7B6B] font-medium">PDF Mode:</span>
+            <div className="flex bg-[#E8DFD0]/40 rounded-lg p-0.5 border border-[#E8DFD0]/80">
+              <button
+                type="button"
+                onClick={() => setPdfPageMode('clean-reflow')}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[10px] font-bold transition-all",
+                  pdfPageMode === 'clean-reflow' ? "bg-white text-[#8B5E3C] shadow-xs" : "text-[#8C7B6B] hover:text-[#3D2E1C]"
+                )}
+                title="Clean Reflow: Academic compact typography with soft page dividers"
+              >
+                Reflow
+              </button>
+              <button
+                type="button"
+                onClick={() => setPdfPageMode('faithful')}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[10px] font-bold transition-all",
+                  pdfPageMode === 'faithful' ? "bg-white text-[#8B5E3C] shadow-xs" : "text-[#8C7B6B] hover:text-[#3D2E1C]"
+                )}
+                title="Faithful: 1:1 Page budget matching source document"
+              >
+                1:1 Faithful
+              </button>
+            </div>
           </div>
         </div>
       </motion.div>
