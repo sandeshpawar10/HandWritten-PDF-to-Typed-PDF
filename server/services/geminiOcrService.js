@@ -2,34 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { PDFDocument } from 'pdf-lib';
 import { createDocxBuffer } from './docxExportService.js';
-
-// Active Gemini models in priority fallback order
-// If the primary model exhausts quota, the system falls back to the next model in the chain
-const CANDIDATE_MODELS = [
-  process.env.GEMINI_MODEL || 'gemini-3.8-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-3.5-flash',
-  'gemini-3.1-flash-lite'
-].filter((m, i, arr) => arr.indexOf(m) === i);
-
-let currentModelIndex = 0;
-
-function getActiveModel() {
-  return CANDIDATE_MODELS[currentModelIndex % CANDIDATE_MODELS.length];
-}
-
-function switchToNextModel() {
-  if (currentModelIndex < CANDIDATE_MODELS.length - 1) {
-    currentModelIndex++;
-    console.log(`[Model Fallback] Switching active model to: ${getActiveModel()}`);
-    // Clear cooldowns because Google's quota is enforced independently per model
-    keyCooldowns.clear();
-    return true;
-  }
-  return false;
-}
-
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+import { transcribePage, OcrError } from './geminiPool.js';
 
 /**
  * Persistent on-disk and in-memory page cache.
@@ -117,19 +90,6 @@ Transcribe the provided document page into clean, publication-ready GitHub-flavo
 Return ONLY the clean Markdown transcription of this page without conversational preamble or conversational sign-off.`;
 
 /**
- * Rate limit parameters for Gemini Free Tier:
- * 15 requests per minute per key = 1 request every 4,000 ms.
- * We set MIN_KEY_INTERVAL_MS = 4,200 ms to provide a 5% buffer,
- * guaranteeing zero 429 quota exhaustion errors during normal operation.
- */
-const MIN_KEY_INTERVAL_MS = 4200;
-
-const keyCooldowns = new Map(); // apiKey -> timestamp (ms) until which key is in 429/503 cooldown
-const keyLastUsedTime = new Map(); // apiKey -> timestamp (ms) when last request was initiated
-const inFlightKeys = new Set(); // apiKey -> actively executing an HTTP request
-let keyRoundRobinIndex = 0;
-
-/**
  * Parse all configured API keys (supports single key or comma-separated list of keys)
  */
 function getApiKeys() {
@@ -138,288 +98,6 @@ function getApiKeys() {
     .split(',')
     .map(k => k.trim())
     .filter(k => k && k !== 'your_gemini_api_key_here');
-}
-
-/**
- * Extract retry delay in seconds from Google's response headers or error message
- */
-function parseRetryDelay(response, errJson) {
-  const retryHeader = response.headers.get('retry-after');
-  if (retryHeader) {
-    const sec = parseInt(retryHeader, 10);
-    if (!isNaN(sec) && sec > 0) return sec + 2;
-  }
-
-  const msg = errJson?.error?.message || '';
-  const match = msg.match(/retry in ([\d.]+)s/i);
-  if (match) {
-    const sec = parseFloat(match[1]);
-    if (!isNaN(sec) && sec > 0) return Math.ceil(sec) + 2;
-  }
-
-  return 30;
-}
-
-/**
- * Fair token bucket & concurrency coordinator across the pool of Gemini API keys.
- * Enforces:
- * 1. Mutual exclusion: A key cannot be used by two workers simultaneously.
- * 2. Rate pacing: Enforces a minimum interval of 4200ms per key (< 15 RPM).
- * 3. Cooldown compliance: Skips keys cooling down from 429 or 503.
- * 4. Automatic wait: If all keys are currently in use or cooling down, waits asynchronously
- *    and streams status messages to the client.
- */
-async function acquireApiKey(apiKeys, pageNum, totalPages, onProgress) {
-  while (true) {
-    const now = Date.now();
-    let soonestAvailableTime = Infinity;
-    let candidateFound = null;
-
-    // Search keys starting from keyRoundRobinIndex
-    for (let i = 0; i < apiKeys.length; i++) {
-      const idx = (keyRoundRobinIndex + i) % apiKeys.length;
-      const key = apiKeys[idx];
-
-      // If another worker is currently in-flight with this key, skip it
-      if (inFlightKeys.has(key)) {
-        continue;
-      }
-
-      // Check cooldown (from 429 or 503)
-      const cooldownUntil = keyCooldowns.get(key) || 0;
-      if (now < cooldownUntil) {
-        soonestAvailableTime = Math.min(soonestAvailableTime, cooldownUntil);
-        continue;
-      }
-
-      // Check minimum interval between requests for this key
-      const lastUsed = keyLastUsedTime.get(key) || 0;
-      const eligibleAt = lastUsed + MIN_KEY_INTERVAL_MS;
-      if (now < eligibleAt) {
-        soonestAvailableTime = Math.min(soonestAvailableTime, eligibleAt);
-        continue;
-      }
-
-      // Key is completely free, cooled down, and interval has passed!
-      candidateFound = { key, keyIndex: idx };
-      keyRoundRobinIndex = (idx + 1) % apiKeys.length;
-      break;
-    }
-
-    if (candidateFound) {
-      inFlightKeys.add(candidateFound.key);
-      keyLastUsedTime.set(candidateFound.key, Date.now());
-      return candidateFound;
-    }
-
-    // No key is ready right now. Calculate how long to wait.
-    let waitMs = soonestAvailableTime === Infinity ? 1000 : Math.max(100, soonestAvailableTime - now);
-    waitMs = Math.min(waitMs, 2000); // Check frequently in case an in-flight key finishes earlier
-
-    // If all keys are in cooldown from Google rate limits, notify progress
-    const allInCooldown = apiKeys.every(k => (keyCooldowns.get(k) || 0) > now);
-    if (allInCooldown) {
-      let maxWaitMs = 0;
-      for (const k of apiKeys) {
-        maxWaitMs = Math.max(maxWaitMs, (keyCooldowns.get(k) || 0) - now);
-      }
-      const waitSec = Math.ceil(maxWaitMs / 1000);
-      onProgress?.({
-        current: Math.max(0, pageNum - 1),
-        total: totalPages,
-        percent: Math.round(((pageNum - 1) / totalPages) * 100),
-        message: `⏳ Quota cooldown. Resuming page ${pageNum} in ${waitSec}s...`
-      });
-    }
-
-    await new Promise(r => setTimeout(r, waitMs));
-  }
-}
-
-function releaseApiKey(key) {
-  inFlightKeys.delete(key);
-}
-
-/**
- * Call Gemini Flash API using multi-key round-robin pool with smart failover,
- * jittered key selection, and persistent auto-recovery from 503 High Demand spikes.
- * @param {string} mimeType - MIME type of the part
- * @param {string} base64Data - Base64 encoded file data
- * @param {string[]} apiKeys - Array of Gemini API keys
- * @param {number} pageNum - Current page number
- * @param {number} totalPages - Total page count
- * @param {Function} onProgress - Progress callback function
- * @returns {Promise<string>} - Transcribed markdown
- */
-async function callGeminiFlashWithPool(mimeType, base64Data, apiKeys, pageNum, totalPages, onProgress) {
-  const maxAttempts = Math.max(apiKeys.length * 3, 18);
-  let attempts = 0;
-  let consecutiveQuotaErrors = 0;
-
-  while (attempts < maxAttempts) {
-    attempts++;
-
-    // Acquire an eligible, rate-paced key from the pool
-    const { key: selectedKey, keyIndex } = await acquireApiKey(apiKeys, pageNum, totalPages, onProgress);
-    const selectedKeyNumber = keyIndex + 1;
-    const currentModel = getActiveModel();
-
-    try {
-      const url = `${GEMINI_API_URL}/${currentModel}:generateContent?key=${selectedKey}`;
-      const requestBody = {
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: base64Data
-                }
-              },
-              {
-                text: OCR_SYSTEM_PROMPT
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 8192
-        }
-      };
-
-      let response;
-      try {
-        response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(requestBody)
-        });
-      } catch (fetchErr) {
-        console.warn(`Network glitch with key #${selectedKeyNumber} on page ${pageNum}:`, fetchErr.message);
-        keyCooldowns.set(selectedKey, Date.now() + 2000);
-        await new Promise(r => setTimeout(r, 1000));
-        continue;
-      }
-
-      if (!response.ok) {
-        let errJson = null;
-        let errorDetail = `HTTP ${response.status} ${response.statusText}`;
-        try {
-          errJson = await response.json();
-          errorDetail = errJson.error?.message || errorDetail;
-        } catch {
-          // ignore parse error
-        }
-
-        // Handle HTTP 429 Rate Limit with Smart Key Failover & Model Fallback
-        if (response.status === 429) {
-          consecutiveQuotaErrors++;
-          const cooldownSec = parseRetryDelay(response, errJson);
-          keyCooldowns.set(selectedKey, Date.now() + cooldownSec * 1000);
-          console.warn(`⚠️ Key #${selectedKeyNumber} hit rate limit (429) on ${currentModel}: ${errorDetail}. Cooldown: ${cooldownSec}s.`);
-
-          // Circuit breaker: If all keys in the pool fail consecutively on this model,
-          // switch to the next fallback model (e.g. gemini-3.5-flash-lite)
-          if (consecutiveQuotaErrors >= apiKeys.length) {
-            console.warn(`All ${apiKeys.length} API keys exhausted quota on ${currentModel}. Attempting model fallback...`);
-            if (switchToNextModel()) {
-              consecutiveQuotaErrors = 0;
-              const nextModel = getActiveModel();
-              onProgress?.({
-                current: Math.max(0, pageNum - 1),
-                total: totalPages,
-                percent: Math.round(((pageNum - 1) / totalPages) * 100),
-                message: `Quota reached on ${currentModel}. Switching to ${nextModel}...`
-              });
-              continue;
-            } else {
-              // All models exhausted across all keys - stop immediately instead of looping
-              throw new Error(`Daily free-tier quota exhausted across all ${apiKeys.length} API keys and models (${errorDetail}). Quota resets at midnight Pacific Time. To remove all limits permanently, link a billing account in Google AI Studio.`);
-            }
-          }
-
-          onProgress?.({
-            current: Math.max(0, pageNum - 1),
-            total: totalPages,
-            percent: Math.round(((pageNum - 1) / totalPages) * 100),
-            message: `Key #${selectedKeyNumber} quota reached. Rotating to next key for page ${pageNum}...`
-          });
-          continue;
-        }
-
-        // Handle HTTP 503 (High Demand), 500, 502, 504 - Transient Server Spikes from Google
-        const isTransientServerError = [500, 502, 503, 504].includes(response.status) ||
-          errorDetail.toLowerCase().includes('high demand') ||
-          errorDetail.toLowerCase().includes('temporarily unavailable') ||
-          errorDetail.toLowerCase().includes('try again later');
-
-        if (isTransientServerError) {
-          console.warn(`⚠️ High demand spike (${response.status}) on page ${pageNum} with key #${selectedKeyNumber} [attempt ${attempts}/${maxAttempts}]: ${errorDetail}`);
-
-          // Brief pause on this specific key
-          keyCooldowns.set(selectedKey, Date.now() + 3000);
-
-          // Exponential backoff
-          const backoffSec = Math.min(2 * Math.ceil(attempts / 2), 8);
-          for (let sec = backoffSec; sec > 0; sec--) {
-            onProgress?.({
-              current: Math.max(0, pageNum - 1),
-              total: totalPages,
-              percent: Math.round(((pageNum - 1) / totalPages) * 100),
-              message: `⏳ High demand spike on Page ${pageNum}. Retrying in ${sec}s...`
-            });
-            await new Promise(r => setTimeout(r, 1000));
-          }
-
-          continue;
-        }
-
-        if (response.status === 400) {
-          throw new Error(`API request error: ${errorDetail}`);
-        } else if (response.status === 403) {
-          throw new Error(`API authentication failed for key #${selectedKeyNumber}: ${errorDetail}`);
-        }
-
-        throw new Error(`API Error: ${errorDetail}`);
-      }
-
-      const result = await response.json();
-      const candidate = result.candidates?.[0];
-      const text = candidate?.content?.parts?.map(p => p.text).join('') || '';
-
-      if (!text) {
-        throw new Error('API returned an empty response for this page.');
-      }
-
-      // Success! Reset consecutive quota error counter and clear key cooldown
-      consecutiveQuotaErrors = 0;
-      keyCooldowns.delete(selectedKey);
-      return cleanMarkdownOutput(text);
-
-    } finally {
-      // Release key back into pool so another worker can acquire it
-      releaseApiKey(selectedKey);
-    }
-  }
-
-  throw new Error(`Failed to transcribe page ${pageNum} after multiple retries across all available API keys.`);
-}
-
-/**
- * Clean up raw markdown output (remove unnecessary outer fences)
- */
-function cleanMarkdownOutput(raw) {
-  let cleaned = raw.trim();
-  if (cleaned.startsWith('```markdown') && cleaned.endsWith('```')) {
-    cleaned = cleaned.slice(11, -3).trim();
-  } else if (cleaned.startsWith('```md') && cleaned.endsWith('```')) {
-    cleaned = cleaned.slice(5, -3).trim();
-  }
-  return cleaned;
 }
 
 /**
@@ -564,14 +242,21 @@ export async function runGeminiOCR(body, onProgress) {
           });
 
           try {
-            const pageText = await callGeminiFlashWithPool(
-              'application/pdf',
-              singlePageBase64,
+            const { text: pageText } = await transcribePage({
               apiKeys,
+              mimeType: 'application/pdf',
+              base64Data: singlePageBase64,
+              prompt: OCR_SYSTEM_PROMPT,
               pageNum,
-              totalPages,
-              onProgress
-            );
+              onStatus: (msg) => {
+                onProgress?.({
+                  current: completedCount,
+                  total: totalPages,
+                  percent: Math.round((completedCount / totalPages) * 100),
+                  message: msg
+                });
+              }
+            });
 
             const formattedPage = `--- Page ${pageNum} ---\n\n${pageText}`;
             results[i] = formattedPage;
@@ -591,7 +276,7 @@ export async function runGeminiOCR(body, onProgress) {
               status: 500,
               data: {
                 error: `Failed to transcribe page ${pageNum}: ${pageErr.message}`,
-                type: 'PAGE_ERROR'
+                type: pageErr.code || 'PAGE_ERROR'
               }
             };
           }
@@ -664,7 +349,21 @@ export async function runGeminiOCR(body, onProgress) {
       message: 'Transcribing image...'
     });
 
-    const pageText = await callGeminiFlashWithPool(mimeType, rawData, apiKeys, 1, 1, onProgress);
+    const { text: pageText } = await transcribePage({
+      apiKeys,
+      mimeType,
+      base64Data: rawData,
+      prompt: OCR_SYSTEM_PROMPT,
+      pageNum: 1,
+      onStatus: (msg) => {
+        onProgress?.({
+          current: 0,
+          total: 1,
+          percent: 50,
+          message: msg
+        });
+      }
+    });
     saveCachedPage(imageSignature, pageText);
 
     onProgress?.({
