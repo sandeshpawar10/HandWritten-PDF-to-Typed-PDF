@@ -367,12 +367,17 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
                       <div className="w-full pt-1">
                         {processingProgress?.jobId === job.id ? (
                           <ChunkedProgressBar progress={processingProgress} />
-                        ) : job.progressMessage ? (
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50/70 border border-blue-100 text-[11px] text-blue-700 font-medium">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-blue-600" />
-                            <span className="truncate">{job.progressMessage}</span>
-                          </div>
-                        ) : null}
+                        ) : (
+                          <ChunkedProgressBar
+                            progress={{
+                              percent: 15,
+                              current: 0,
+                              total: 1,
+                              stage: 'reading',
+                              message: job.progressMessage || 'Preparing document for OCR...'
+                            }}
+                          />
+                        )}
                       </div>
                     )}
 

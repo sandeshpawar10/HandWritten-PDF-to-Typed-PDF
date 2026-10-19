@@ -1,6 +1,9 @@
 import { useMemo } from 'react';
+import PropTypes from 'prop-types';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { CodeBlock } from './rare/CodeBlock';
+
 
 // ─────────────────────────────────────────────
 //  HTML escape (for non-math text only)
@@ -464,34 +467,109 @@ function parseMarkdown(md) {
   return out.join("\n");
 }
 
+/**
+ * Split markdown into structured blocks:
+ * - Code blocks are rendered as interactive React <CodeBlock /> components.
+ * - Other markdown content is formatted via parseMarkdown.
+ */
+export function parseMarkdownToBlocks(md) {
+  if (!md) return [];
+  const lines = md.split('\n');
+  const blocks = [];
+  let htmlLines = [];
+  let inCode = false;
+  let codeLines = [];
+  let codeLang = '';
+
+  const flushHtml = () => {
+    if (htmlLines.length > 0) {
+      const html = parseMarkdown(htmlLines.join('\n'));
+      if (html && html.trim()) {
+        blocks.push({ type: 'html', html });
+      }
+      htmlLines = [];
+    }
+  };
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith('```')) {
+      if (inCode) {
+        // closing code fence
+        blocks.push({
+          type: 'code',
+          code: codeLines.join('\n'),
+          lang: codeLang
+        });
+        codeLines = [];
+        codeLang = '';
+        inCode = false;
+      } else {
+        flushHtml();
+        codeLang = trimmed.slice(3).trim();
+        inCode = true;
+      }
+      i++;
+      continue;
+    }
+
+    if (inCode) {
+      codeLines.push(line);
+      i++;
+      continue;
+    }
+
+    htmlLines.push(line);
+    i++;
+  }
+
+  if (inCode && codeLines.length > 0) {
+    blocks.push({
+      type: 'code',
+      code: codeLines.join('\n'),
+      lang: codeLang
+    });
+  } else {
+    flushHtml();
+  }
+
+  return blocks;
+}
+
 // ─────────────────────────────────────────────
 //  Component
 // ─────────────────────────────────────────────
 export function MarkdownPreview({ content, className = '' }) {
-  const html = useMemo(() => parseMarkdown(content), [content]);
-
-  const handleClick = (e) => {
-    const copyBtn = e.target.closest('.md-code-copy-btn');
-    if (copyBtn) {
-      e.stopPropagation();
-      const code = decodeURIComponent(copyBtn.getAttribute('data-code') || '');
-      if (code) {
-        if (navigator.clipboard) {
-          navigator.clipboard.writeText(code);
-        }
-        copyBtn.textContent = '✓ Copied';
-        setTimeout(() => {
-          copyBtn.textContent = 'Copy';
-        }, 2000);
-      }
-    }
-  };
+  const blocks = useMemo(() => parseMarkdownToBlocks(content), [content]);
 
   return (
-    <div
-      className={`md-preview ${className}`}
-      onClick={handleClick}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className={`md-preview ${className}`}>
+      {blocks.map((block, idx) => {
+        if (block.type === 'code') {
+          return (
+            <CodeBlock
+              key={`code-${idx}`}
+              code={block.code}
+              language={block.lang}
+            />
+          );
+        }
+        return (
+          <div
+            key={`html-${idx}`}
+            dangerouslySetInnerHTML={{ __html: block.html }}
+          />
+        );
+      })}
+    </div>
   );
 }
+
+MarkdownPreview.propTypes = {
+  content: PropTypes.string,
+  className: PropTypes.string
+};
+

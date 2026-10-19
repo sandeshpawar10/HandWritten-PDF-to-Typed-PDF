@@ -124,11 +124,17 @@ export function DocumentList({ documents, onSelect }) {
                   >
                     <TypeIcon className="w-6 h-6 text-[#8B5E3C]" />
                   </motion.div>
-                  <DeleteButton
-                    onConfirm={() => handleDelete(doc.id, doc.title)}
-                    aria-label={`Delete ${doc.title || 'document'}`}
-                    className="opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity"
-                  />
+                  <div
+                    onClick={(e) => { e.stopPropagation(); }}
+                    onPointerDown={(e) => { e.stopPropagation(); }}
+                    className="relative z-30"
+                  >
+                    <DeleteButton
+                      onConfirm={() => handleDelete(doc.id, doc.title)}
+                      aria-label={`Delete ${doc.title || 'document'}`}
+                      className="opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity"
+                    />
+                  </div>
                 </div>
 
                 <h4 className="font-serif font-black text-xl text-[#3D2E1C] mb-3 truncate pr-2 group-hover:text-[#8B5E3C] transition-colors">

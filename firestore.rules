@@ -71,6 +71,8 @@ service cloud.firestore {
                         isValidId(versionId) &&
                         isValidVersion(incoming()) &&
                         incoming().createdAt == request.time;
+
+        allow delete: if isSignedIn() && isOwner(existing().userId);
       }
     }
   }

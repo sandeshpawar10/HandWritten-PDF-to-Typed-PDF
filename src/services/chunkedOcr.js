@@ -195,6 +195,7 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
 
             if (event.type === 'progress') {
               wrappedOnProgress({
+                stage: event.stage || (event.percent >= 90 ? 'formatting' : event.percent >= 75 ? 'verifying' : 'transcribing'),
                 current: event.current_page ?? event.current ?? 0,
                 total: event.total_pages ?? event.total ?? 0,
                 percent: event.percent ?? Math.round(((event.current_page || 0) / (event.total_pages || 1)) * 100),

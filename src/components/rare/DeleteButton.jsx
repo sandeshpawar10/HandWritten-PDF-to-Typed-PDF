@@ -33,7 +33,8 @@ export function DeleteButton({
   }, []);
 
   const handleClick = (e) => {
-    e.stopPropagation();
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
     if (isLoading) return;
 
     if (!isConfirming) {
@@ -56,14 +57,19 @@ export function DeleteButton({
   };
 
   const handleCancel = (e) => {
-    e.stopPropagation();
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
     clearTimer();
     setIsConfirming(false);
     onCancel?.();
   };
 
   return (
-    <div className={cn("inline-flex items-center relative", className)} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={cn("inline-flex items-center relative z-20", className)}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onPointerDown={(e) => { e.stopPropagation(); }}
+    >
       <AnimatePresence mode="wait" initial={false}>
         {!isConfirming ? (
           <motion.button

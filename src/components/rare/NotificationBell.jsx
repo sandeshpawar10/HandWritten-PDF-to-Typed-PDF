@@ -20,16 +20,16 @@ function formatRelativeTime(ts) {
   return `${Math.floor(diffSec / 86400)}d ago`;
 }
 
-export function NotificationBell({ onSelectDoc, className }) {
+export function NotificationBell({ onSelectDoc, userId, className }) {
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef(null);
   const { reduce, spring } = useTypedDocMotion();
 
   useEffect(() => {
-    const unsubscribe = subscribeNotifications(setNotifications);
+    const unsubscribe = subscribeNotifications(setNotifications, userId);
     return unsubscribe;
-  }, []);
+  }, [userId]);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -46,7 +46,7 @@ export function NotificationBell({ onSelectDoc, className }) {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleItemClick = (n) => {
-    markNotificationAsRead(n.id);
+    markNotificationAsRead(n.id, userId);
     if (n.docId && onSelectDoc) {
       onSelectDoc(n.docId);
       setIsOpen(false);
@@ -102,7 +102,7 @@ export function NotificationBell({ onSelectDoc, className }) {
                 {unreadCount > 0 && (
                   <button
                     type="button"
-                    onClick={markAllNotificationsAsRead}
+                    onClick={() => markAllNotificationsAsRead(userId)}
                     title="Mark all as read"
                     className="p-1 rounded-lg text-[#8C7B6B] hover:text-[#3D2E1C] hover:bg-[#F5F0E8] transition-colors"
                   >
@@ -112,7 +112,7 @@ export function NotificationBell({ onSelectDoc, className }) {
                 {notifications.length > 0 && (
                   <button
                     type="button"
-                    onClick={clearAllNotifications}
+                    onClick={() => clearAllNotifications(userId)}
                     title="Clear all"
                     className="p-1 rounded-lg text-[#8C7B6B] hover:text-red-600 hover:bg-red-50 transition-colors"
                   >
@@ -200,5 +200,7 @@ export function NotificationBell({ onSelectDoc, className }) {
 
 NotificationBell.propTypes = {
   onSelectDoc: PropTypes.func,
+  userId: PropTypes.string,
   className: PropTypes.string
 };
+

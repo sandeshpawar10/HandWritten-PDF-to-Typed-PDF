@@ -4,9 +4,14 @@
  * Persists OCR completions, server PDF exports, and verification alerts in localStorage.
  */
 
-const STORAGE_KEY = 'typeddoc_notifications_v1';
+const BASE_STORAGE_KEY = 'typeddoc_notifications_v1';
 const MAX_NOTIFICATIONS = 50;
 const listeners = new Set();
+let currentUserId = null;
+
+export function setNotificationUserId(uid) {
+  currentUserId = uid || null;
+}
 
 function getStorage() {
   if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
@@ -14,11 +19,17 @@ function getStorage() {
   return null;
 }
 
-export function getStoredNotifications() {
+export function getStorageKey(userId) {
+  const uid = userId || currentUserId;
+  return uid ? `${BASE_STORAGE_KEY}_${uid}` : `${BASE_STORAGE_KEY}_guest`;
+}
+
+
+export function getStoredNotifications(userId) {
   const storage = getStorage();
   if (!storage) return [];
   try {
-    const raw = storage.getItem(STORAGE_KEY);
+    const raw = storage.getItem(getStorageKey(userId));
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     console.error('Failed to read notifications from localStorage:', e);
@@ -26,34 +37,35 @@ export function getStoredNotifications() {
   }
 }
 
-function saveNotifications(notifications) {
+function saveNotifications(notifications, userId) {
   const storage = getStorage();
   if (!storage) return;
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(notifications.slice(0, MAX_NOTIFICATIONS)));
-    notifyListeners();
+    storage.setItem(getStorageKey(userId), JSON.stringify(notifications.slice(0, MAX_NOTIFICATIONS)));
+    notifyListeners(userId);
   } catch (e) {
     console.error('Failed to save notifications to localStorage:', e);
   }
 }
 
-function notifyListeners() {
-  const current = getStoredNotifications();
+function notifyListeners(userId) {
+  const current = getStoredNotifications(userId);
   listeners.forEach(fn => fn(current));
 }
 
-export function subscribeNotifications(callback) {
+export function subscribeNotifications(callback, userId) {
   listeners.add(callback);
-  callback(getStoredNotifications());
+  callback(getStoredNotifications(userId));
   return () => listeners.delete(callback);
 }
+
 
 /**
  * Add a durable notification event with deduplication.
  */
-export function addNotification({ title, message, type = 'info', docId, link }) {
+export function addNotification({ title, message, type = 'info', docId, link, userId }) {
   if (!title) return;
-  const current = getStoredNotifications();
+  const current = getStoredNotifications(userId);
 
   // Deduplicate recent identical events (<15 seconds)
   const now = Date.now();
@@ -73,21 +85,22 @@ export function addNotification({ title, message, type = 'info', docId, link }) 
     timestamp: now
   };
 
-  saveNotifications([newEntry, ...current]);
+  saveNotifications([newEntry, ...current], userId);
 }
 
-export function markNotificationAsRead(id) {
-  const current = getStoredNotifications();
+export function markNotificationAsRead(id, userId) {
+  const current = getStoredNotifications(userId);
   const updated = current.map(n => n.id === id ? { ...n, read: true } : n);
-  saveNotifications(updated);
+  saveNotifications(updated, userId);
 }
 
-export function markAllNotificationsAsRead() {
-  const current = getStoredNotifications();
+export function markAllNotificationsAsRead(userId) {
+  const current = getStoredNotifications(userId);
   const updated = current.map(n => ({ ...n, read: true }));
-  saveNotifications(updated);
+  saveNotifications(updated, userId);
 }
 
-export function clearAllNotifications() {
-  saveNotifications([]);
+export function clearAllNotifications(userId) {
+  saveNotifications([], userId);
 }
+

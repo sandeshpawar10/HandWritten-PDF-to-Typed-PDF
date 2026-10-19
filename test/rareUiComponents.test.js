@@ -127,4 +127,40 @@ Definitions and properties.
     clearAllNotifications();
     assert.deepStrictEqual(getStoredNotifications(), []);
   });
+
+  test('Notifications are strictly scoped by user UID and isolated between users', () => {
+    clearAllNotifications('user_alice');
+    clearAllNotifications('user_bob');
+    assert.deepStrictEqual(getStoredNotifications('user_alice'), []);
+    assert.deepStrictEqual(getStoredNotifications('user_bob'), []);
+
+    addNotification({
+      title: 'Alice Document Ready',
+      message: 'Document A formatted.',
+      userId: 'user_alice'
+    });
+
+    addNotification({
+      title: 'Bob Document Ready',
+      message: 'Document B formatted.',
+      userId: 'user_bob'
+    });
+
+    const aliceNotifs = getStoredNotifications('user_alice');
+    const bobNotifs = getStoredNotifications('user_bob');
+
+    assert.strictEqual(aliceNotifs.length, 1);
+    assert.strictEqual(aliceNotifs[0].title, 'Alice Document Ready');
+
+    assert.strictEqual(bobNotifs.length, 1);
+    assert.strictEqual(bobNotifs[0].title, 'Bob Document Ready');
+
+    // Clearing Alice does not affect Bob
+    clearAllNotifications('user_alice');
+    assert.strictEqual(getStoredNotifications('user_alice').length, 0);
+    assert.strictEqual(getStoredNotifications('user_bob').length, 1);
+
+    clearAllNotifications('user_bob');
+  });
 });
+

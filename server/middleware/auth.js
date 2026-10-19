@@ -47,3 +47,20 @@ export const requireAuth = async (req, res, next) => {
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 };
+
+export const optionalAuth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next();
+  }
+  const token = authHeader.slice(7).trim();
+  if (!token) return next();
+  try {
+    const decodedToken = await getAuth().verifyIdToken(token);
+    req.user = decodedToken;
+  } catch (error) {
+    console.warn('Optional auth verification warning:', error.message);
+  }
+  next();
+};
+

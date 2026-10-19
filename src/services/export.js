@@ -6,10 +6,11 @@ import {
 } from 'docx';
 import { auth } from '../lib/firebase.js';
 
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD
-  ? "https://typeddoc.onrender.com"
-  : "http://localhost:3001");
-const RENDER_PDF_URL = `${API_BASE}/api/v1/render/pdf`;
+const API_BASE = (import.meta.env.VITE_API_URL !== undefined && import.meta.env.VITE_API_URL !== '')
+  ? import.meta.env.VITE_API_URL
+  : (import.meta.env.PROD ? "https://typeddoc.onrender.com" : "");
+const RENDER_PDF_URL = API_BASE ? `${API_BASE}/api/v1/render/pdf` : '/api/v1/render/pdf';
+
 
 // ── Markdown parser helpers ──
 
@@ -309,6 +310,169 @@ export const exportToDocx = async (title, content) => {
  * Request real server-generated PDF with embedded metadata and academic typography.
  * Strictly downloads the authentic server binary (*_formatted.pdf).
  */
+/**
+ * Client-side PDF fallback generator using pdf-lib.
+ * Activated when server endpoints are offline or unreachable.
+ */
+export async function generateClientPdf(title, content, options = {}) {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.setTitle(title || 'TypedDoc Document');
+  pdfDoc.setCreator('TypedDoc Client Engine');
+  pdfDoc.setProducer('pdf-lib');
+
+  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+
+  const PAGE_WIDTH = 595.28;
+  const PAGE_HEIGHT = 841.89;
+  const MARGIN_X = 54;
+  const MARGIN_Y = 54;
+  const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2;
+
+  let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  let cursorY = PAGE_HEIGHT - MARGIN_Y;
+  let pageNumber = 1;
+
+  const addNewPage = () => {
+    page.drawText(`${pageNumber}`, {
+      x: PAGE_WIDTH / 2 - 5,
+      y: 30,
+      size: 9,
+      font,
+      color: rgb(0.4, 0.4, 0.4)
+    });
+    pageNumber++;
+    page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    cursorY = PAGE_HEIGHT - MARGIN_Y;
+  };
+
+  // Draw Title
+  const cleanTitle = (title || 'Document').trim();
+  page.drawText(cleanTitle, {
+    x: MARGIN_X,
+    y: cursorY - 14,
+    size: 18,
+    font: boldFont,
+    color: rgb(0.12, 0.12, 0.12)
+  });
+  cursorY -= 36;
+
+  page.drawLine({
+    start: { x: MARGIN_X, y: cursorY + 8 },
+    end: { x: PAGE_WIDTH - MARGIN_X, y: cursorY + 8 },
+    thickness: 1,
+    color: rgb(0.8, 0.8, 0.8)
+  });
+
+  const lines = (content || '').split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      cursorY -= 10;
+      if (cursorY < MARGIN_Y + 40) addNewPage();
+      continue;
+    }
+
+    if (trimmed.match(/^--- Page \d+ ---$/) || trimmed === '---') {
+      if (options.pageMode === 'faithful') {
+        addNewPage();
+        continue;
+      }
+      cursorY -= 8;
+      continue;
+    }
+
+    const isH1 = trimmed.startsWith('# ');
+    const isH2 = trimmed.startsWith('## ');
+    const isH3 = trimmed.startsWith('### ');
+    const isHeading = isH1 || isH2 || isH3;
+
+    let fontSize = 10.5;
+    let currentFont = font;
+    let lineHeight = 14;
+    let color = rgb(0.15, 0.15, 0.15);
+
+    let textToDraw = trimmed;
+    if (isH1) {
+      fontSize = 14;
+      currentFont = boldFont;
+      lineHeight = 18;
+      textToDraw = trimmed.replace(/^#\s+/, '');
+      cursorY -= 8;
+    } else if (isH2) {
+      fontSize = 12;
+      currentFont = boldFont;
+      lineHeight = 16;
+      textToDraw = trimmed.replace(/^##\s+/, '');
+      cursorY -= 6;
+    } else if (isH3) {
+      fontSize = 11;
+      currentFont = boldFont;
+      lineHeight = 15;
+      textToDraw = trimmed.replace(/^###\s+/, '');
+      cursorY -= 4;
+    }
+
+    // Word wrap
+    const words = textToDraw.split(/\s+/);
+    let curLine = '';
+    for (const w of words) {
+      const testLine = curLine ? `${curLine} ${w}` : w;
+      if (currentFont.widthOfTextAtSize(testLine, fontSize) <= CONTENT_WIDTH) {
+        curLine = testLine;
+      } else {
+        if (cursorY < MARGIN_Y + 40) addNewPage();
+        page.drawText(curLine, {
+          x: MARGIN_X,
+          y: cursorY,
+          size: fontSize,
+          font: currentFont,
+          color
+        });
+        cursorY -= lineHeight;
+        curLine = w;
+      }
+    }
+    if (curLine) {
+      if (cursorY < MARGIN_Y + 40) addNewPage();
+      page.drawText(curLine, {
+        x: MARGIN_X,
+        y: cursorY,
+        size: fontSize,
+        font: currentFont,
+        color
+      });
+      cursorY -= lineHeight;
+    }
+    if (isHeading) cursorY -= 4;
+  }
+
+  // Draw final page footer
+  page.drawText(`${pageNumber}`, {
+    x: PAGE_WIDTH / 2 - 5,
+    y: 30,
+    size: 9,
+    font,
+    color: rgb(0.4, 0.4, 0.4)
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const safeTitle = (title || 'document').replace(/[/\\?%*:|"<>]/g, '_').trim();
+  saveAs(blob, `${safeTitle}.pdf`);
+
+  return {
+    clientFallback: true,
+    pageCount: pageNumber
+  };
+}
+
+/**
+ * Request real server-generated PDF with embedded metadata and academic typography.
+ * Strictly downloads the authentic server binary (*_formatted.pdf).
+ * Falls back to client-side generation if server endpoints are unreachable.
+ */
 export async function exportServerPdf(title, content, options = {}) {
   const { pageMode = 'clean-reflow' } = options;
 
@@ -325,48 +489,67 @@ export async function exportServerPdf(title, content, options = {}) {
     }
   }
 
-  const res = await fetch(RENDER_PDF_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    },
-    body: JSON.stringify({
-      title: title || 'TypedDoc Document',
-      content,
-      pageMode
-    })
-  });
+  const endpointsToTry = [
+    RENDER_PDF_URL,
+    ...(RENDER_PDF_URL !== '/api/v1/render/pdf' && !import.meta.env.PROD ? ['/api/v1/render/pdf'] : []),
+    ...(!import.meta.env.PROD && RENDER_PDF_URL !== 'http://localhost:3001/api/v1/render/pdf' ? ['http://localhost:3001/api/v1/render/pdf'] : [])
+  ];
 
-  if (!res.ok) {
-    let errMsg = `Failed to generate PDF (HTTP ${res.status})`;
+  let lastError = null;
+  for (const url of endpointsToTry) {
     try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          title: title || 'TypedDoc Document',
+          content,
+          pageMode
+        })
+      });
+
+      if (!res.ok) {
+        let errMsg = `Failed to generate PDF (HTTP ${res.status})`;
+        try {
+          const data = await res.json();
+          errMsg = data.error || errMsg;
+        } catch {
+          // ignore JSON parse error
+        }
+        throw new Error(errMsg);
+      }
+
       const data = await res.json();
-      errMsg = data.error || errMsg;
-    } catch {
-      // ignore JSON parse error
+      if (!data.formattedPdf) {
+        throw new Error('Server returned an empty PDF payload.');
+      }
+
+      // Download the authentic server-generated PDF binary
+      const byteCharacters = atob(data.formattedPdf);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const safeTitle = (title || 'document').replace(/[/\\?%*:|"<>]/g, '_').trim();
+      saveAs(blob, `${safeTitle}_formatted.pdf`);
+
+      return data;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Render endpoint ${url} attempt failed:`, err.message);
     }
-    throw new Error(errMsg);
   }
 
-  const data = await res.json();
-  if (!data.formattedPdf) {
-    throw new Error('Server returned an empty PDF payload.');
-  }
-
-  // Download the authentic server-generated PDF binary
-  const byteCharacters = atob(data.formattedPdf);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: 'application/pdf' });
-  const safeTitle = (title || 'document').replace(/[/\\?%*:|"<>]/g, '_').trim();
-  saveAs(blob, `${safeTitle}_formatted.pdf`);
-
-  return data;
+  // Server endpoints failed - activate client-side PDF fallback
+  console.warn('Server PDF endpoints unavailable; generating client fallback:', lastError?.message);
+  return await generateClientPdf(title, content, options);
 }
+
 
 /**
  * Authoritative PDF export: Delegates directly to server renderer.
@@ -720,9 +903,15 @@ export async function printCurrentView(title, content, options = {}) {
   // Trigger the print dialog!
   window.print();
 
-  // Cleanup after printing (using a timeout so the print dialog captures it before deletion)
-  setTimeout(() => {
+  // Cleanup after printing using afterprint listener to avoid premature removal while dialog is open
+  const cleanup = () => {
     if (document.body.contains(clone)) document.body.removeChild(clone);
     if (document.head.contains(styleEl)) document.head.removeChild(styleEl);
-  }, 2000);
+    window.removeEventListener('afterprint', cleanup);
+  };
+
+  window.addEventListener('afterprint', cleanup, { once: true });
+  // Fallback safety timeout in case afterprint does not fire in some headless/custom environments
+  setTimeout(cleanup, 60000);
 }
+

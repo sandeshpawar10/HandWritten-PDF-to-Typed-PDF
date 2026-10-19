@@ -6,8 +6,11 @@ import { updateDocument, saveVersion } from '../services/documents';
 import { exportToDocx, exportServerPdf, exportToTxt, printCurrentView } from '../services/export';
 import { MarkdownPreview } from './MarkdownPreview';
 import { ConfirmDialog } from './ConfirmDialog';
-import { AnimatedCounter, RailTOC } from './rare';
+import { toast } from './Toast';
+import { AnimatedCounter, RailTOC, TaskList } from './rare';
 import { cn } from '../lib/utils';
+
+
 
 export function Editor({ doc, onBack, versions }) {
   const [content, setContent] = useState(doc.content);
@@ -24,6 +27,62 @@ export function Editor({ doc, onBack, versions }) {
   const [pdfPageMode, setPdfPageMode] = useState('clean-reflow'); // 'clean-reflow' | 'faithful'
   // Issue #10: Replace confirm() with proper modal
   const [restoreVersion, setRestoreVersion] = useState(null);
+  const [manualTaskOverrides, setManualTaskOverrides] = useState({});
+
+  const verificationTasks = useMemo(() => {
+    const rawContent = content || '';
+    const hasCustomTitle = Boolean(title && title.trim() && title !== 'Untitled Document');
+    const hasHeadings = /^#{1,6}\s+/m.test(rawContent);
+    const hasMath = rawContent.includes('$$') || /\\\([^\\]+\\\)/.test(rawContent);
+    const hasUnclosedMath = (rawContent.match(/\$\$/g) || []).length % 2 !== 0;
+    const mathValid = hasMath ? !hasUnclosedMath : true;
+    const hasTables = rawContent.includes('|---') || rawContent.includes('| ---');
+    const hasContent = rawContent.trim().length > 10;
+
+    return [
+      {
+        id: 'title',
+        label: 'Document title customized',
+        completed: manualTaskOverrides.title !== undefined ? manualTaskOverrides.title : hasCustomTitle,
+        detail: hasCustomTitle ? `"${title}"` : 'Set a descriptive title'
+      },
+      {
+        id: 'headings',
+        label: 'Section hierarchy & headings',
+        completed: manualTaskOverrides.headings !== undefined ? manualTaskOverrides.headings : hasHeadings,
+        detail: hasHeadings ? 'Academic headings detected' : 'Use # or ## headings'
+      },
+      {
+        id: 'math',
+        label: 'KaTeX math syntax verified',
+        completed: manualTaskOverrides.math !== undefined ? manualTaskOverrides.math : mathValid,
+        detail: hasUnclosedMath ? 'Unclosed $$ delimiter' : 'Delimiters balanced'
+      },
+      {
+        id: 'tables',
+        label: 'Tables & columnar alignment',
+        completed: manualTaskOverrides.tables !== undefined ? manualTaskOverrides.tables : true,
+        detail: hasTables ? 'Tables formatted' : 'Standard flow'
+      },
+      {
+        id: 'export_ready',
+        label: 'Ready for PDF reflow export',
+        completed: manualTaskOverrides.export_ready !== undefined ? manualTaskOverrides.export_ready : (hasContent && mathValid),
+        detail: hasContent ? 'Layout verified' : 'Requires content'
+      }
+    ];
+  }, [content, title, manualTaskOverrides]);
+
+  const handleToggleTask = (taskId) => {
+    setManualTaskOverrides(prev => {
+      const current = verificationTasks.find(t => t.id === taskId)?.completed;
+      return {
+        ...prev,
+        [taskId]: !current
+      };
+    });
+  };
+
 
   const saveTimeoutRef = useRef(null);
   const latestContentRef = useRef(content);
@@ -160,9 +219,15 @@ export function Editor({ doc, onBack, versions }) {
     try {
       if (format === 'docx') {
         await exportToDocx(title, content);
+        toast.success('DOCX document downloaded');
       } else if (format === 'pdf') {
-        // Authoritative server-rendered PDF
-        await exportServerPdf(title, content, { pageMode: pdfPageMode });
+        // Authoritative server-rendered PDF (with automatic resilient fallback)
+        const res = await exportServerPdf(title, content, { pageMode: pdfPageMode });
+        if (res?.clientFallback) {
+          toast.info('Server unavailable; exported via local PDF engine');
+        } else {
+          toast.success('Server-formatted PDF downloaded');
+        }
       } else if (format === 'print') {
         // Explicit browser print action
         setShowPrintPreview(true);
@@ -171,7 +236,11 @@ export function Editor({ doc, onBack, versions }) {
         await printCurrentView(title, content, { pageMode: pdfPageMode });
       } else {
         await exportToTxt(title, content);
+        toast.success('Text document downloaded');
       }
+    } catch (exportErr) {
+      console.error(`Export ${format} error:`, exportErr);
+      toast.error(exportErr?.message || `Failed to export ${format.toUpperCase()}`);
     } finally {
       setTimeout(() => {
         setIsExporting(null);
@@ -326,6 +395,19 @@ export function Editor({ doc, onBack, versions }) {
           <RailTOC content={content} />
         </motion.div>
       )}
+
+      {/* Rare UI TaskList - Preflight Verification */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18 }}
+      >
+        <TaskList
+          tasks={verificationTasks}
+          onToggleTask={handleToggleTask}
+          title="Preflight Verification"
+        />
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 10 }}

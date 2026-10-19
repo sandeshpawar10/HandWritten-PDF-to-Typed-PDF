@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { rateLimiter, ocrRateLimiter } from '../middleware/rateLimit.js';
 import { handleOcr, handleClearCache, handlePoolStats } from '../controllers/apiController.js';
 import { handleFormattedOcr } from '../controllers/formattedOcrController.js';
@@ -8,14 +8,14 @@ import { handleRenderPdf } from '../controllers/renderController.js';
 
 const router = express.Router();
 
-// Apply authentication to all API routes first so req.user is available for rate limiting
+// PDF and document rendering endpoint (uses optionalAuth and rateLimiter so valid document exports never 401)
+router.post('/render/pdf', optionalAuth, rateLimiter, handleRenderPdf);
+
+// Apply strict authentication to all OCR endpoints so req.user is available
 router.use(requireAuth);
 
 // Apply general rate limiting
 router.use(rateLimiter);
-
-// PDF and document rendering endpoint
-router.post('/render/pdf', handleRenderPdf);
 
 // OCR endpoints with stricter rate limiting
 router.post('/ocr', ocrRateLimiter, handleOcr);

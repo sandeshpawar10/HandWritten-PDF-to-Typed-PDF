@@ -172,12 +172,24 @@ export const deleteDocument = async (documentId) => {
   const user = auth.currentUser;
   if (!user) throw new Error('Not authenticated');
 
-  // Delete versions subcollection first
-  const versionsRef = collection(db, COLLECTION_NAME, documentId, 'versions');
-  const versionsSnapshot = await getDocs(versionsRef);
-  const deletePromises = versionsSnapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
-  await Promise.all(deletePromises);
+  // Attempt to delete versions subcollection first
+  try {
+    const versionsRef = collection(db, COLLECTION_NAME, documentId, 'versions');
+    const versionsQuery = query(versionsRef, where('userId', '==', user.uid));
+    const versionsSnapshot = await getDocs(versionsQuery);
+    if (!versionsSnapshot.empty) {
+      const deletePromises = versionsSnapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
+      await Promise.all(deletePromises);
+    }
+  } catch (versionsErr) {
+    console.warn('Could not clean up document versions subcollection:', versionsErr.message);
+  }
 
-  // Then delete the document
-  return deleteDoc(doc(db, COLLECTION_NAME, documentId));
+  // Authoritatively delete the primary document
+  try {
+    return await deleteDoc(doc(db, COLLECTION_NAME, documentId));
+  } catch (err) {
+    handleFirestoreError(err, 'delete', `${COLLECTION_NAME}/${documentId}`);
+  }
 };
+

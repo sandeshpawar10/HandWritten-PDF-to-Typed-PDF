@@ -15,6 +15,8 @@ import { OfflineBanner } from './components/OfflineBanner';
 import { ToastContainer, toast } from './components/Toast';
 import { FormattedDocumentViewer } from './components/FormattedDocumentViewer';
 import { NotificationBell, FAQDrawer, AnimatedCounter } from './components/rare';
+import { setNotificationUserId } from './lib/notifications';
+
 
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -57,6 +59,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    setNotificationUserId(user?.uid || null);
     if (user) {
       const unsubscribe = subscribeToDocuments(user.uid, setDocuments);
       return unsubscribe;
@@ -404,7 +407,13 @@ export default function App() {
         </div>
         <span className="font-serif font-black text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">TypedDoc</span>
         <div className="ml-auto flex items-center gap-1.5">
-          <NotificationBell onSelectDoc={id => { const d = documents.find(doc => doc.id === id); if (d) { setSelectedDoc(d); setView('edit'); } }} />
+          <NotificationBell
+            userId={user?.uid}
+            onSelectDoc={id => {
+              const d = documents.find(doc => doc.id === id);
+              if (d) { setSelectedDoc(d); setView('edit'); }
+            }}
+          />
           <button onClick={() => setMobileSidebar(false)} className="p-2 rounded-xl bg-white/80 border border-[#E8DFD0] shadow-sm md:hidden text-[#3D2E1C] hover:bg-white hover:scale-105 transition-all magnetic">
             <X className="w-4 h-4" />
           </button>
