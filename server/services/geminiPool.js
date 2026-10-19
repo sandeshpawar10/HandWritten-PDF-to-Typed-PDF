@@ -410,13 +410,18 @@ export async function transcribePage({
 
       if ([500, 502, 503, 504].includes(res.status) || detail.toLowerCase().includes('high demand')) {
         transient++;
-        if (modelIndex < CANDIDATE_MODELS.length - 1 && transient >= 3) {
+        const isHighDemand = res.status === 503 || detail.toLowerCase().includes('high demand');
+        if (modelIndex < CANDIDATE_MODELS.length - 1 && (isHighDemand || transient >= 2)) {
           modelIndex++;
+          const prevModel = model;
           model = CANDIDATE_MODELS[modelIndex];
-          console.warn(`Switching page ${pageNum} to model tier ${model} due to upstream ${res.status}`);
+          console.warn(`[enginePool] Page ${pageNum}: fast failover from ${prevModel} to ${model} due to upstream ${res.status}`);
+          onStatus?.(`Page ${pageNum}: primary model busy (${res.status}), switching to ${model}...`);
+          await sleep(500, signal);
+          continue;
         }
         const wait = backoffMs(transient);
-        onStatus?.(`Page ${pageNum}: high demand (${res.status}), retrying in ${Math.round(wait / 1000)}s...`);
+        onStatus?.(`Page ${pageNum}: service busy (${res.status}), retrying in ${Math.round(wait / 1000)}s...`);
         await sleep(wait, signal);
         continue;
       }

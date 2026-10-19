@@ -33,7 +33,13 @@ export function ChunkedProgressBar({ progress }) {
     : 0;
   const safeCurrent = Number.isFinite(progress?.current) ? progress.current : 0;
   const safeTotal = Number.isFinite(progress?.total) ? progress.total : 0;
+  const inFlight = Number.isFinite(progress?.inFlight) ? progress.inFlight : 0;
   const message = progress?.message || '';
+
+  // Ensure bar is visibly active when workers are running, even before 1st page completes
+  const visualPercent = (safePercent === 0 && (inFlight > 0 || progress?.stage === 'transcribing' || progress?.stage === 'rendering'))
+    ? 6
+    : safePercent;
 
   // Determine active stage for StepPlayer
   let activeStageIndex = 0;
@@ -47,10 +53,10 @@ export function ChunkedProgressBar({ progress }) {
   } else if (progress?.stage === 'verifying' || safePercent >= 80) {
     activeStageIndex = 3;
     aiState = 'verifying';
-  } else if (progress?.stage === 'transcribing' || safeCurrent > 0) {
+  } else if (progress?.stage === 'transcribing' || inFlight > 0 || safeCurrent > 0) {
     activeStageIndex = 2;
     aiState = 'ocr';
-  } else if (progress?.stage === 'rendering' || safePercent > 0) {
+  } else if (progress?.stage === 'rendering' || visualPercent > 0) {
     activeStageIndex = 1;
     aiState = 'reading';
   }
@@ -88,10 +94,13 @@ export function ChunkedProgressBar({ progress }) {
         aria-valuemax="100"
       >
         <div
-          className="absolute inset-0 bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out flex items-center justify-center"
-          style={{ width: `${safePercent}%` }}
+          className={cn(
+            "absolute inset-0 bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out flex items-center justify-center",
+            visualPercent === 6 && "animate-pulse"
+          )}
+          style={{ width: `${visualPercent}%` }}
         >
-          {safePercent > 10 && (
+          {visualPercent > 10 && (
             <span className="text-[11px] font-bold text-white z-10">
               {safePercent}%
             </span>
@@ -110,11 +119,23 @@ export function ChunkedProgressBar({ progress }) {
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <InlineAIStatus
           state={aiState}
-          detail={safeTotal > 0 ? `${safeCurrent}/${safeTotal} pages` : undefined}
+          detail={
+            safeTotal > 0
+              ? (inFlight > 0
+                  ? `${safeCurrent}/${safeTotal} pages (${inFlight} active)`
+                  : `${safeCurrent}/${safeTotal} pages`)
+              : undefined
+          }
           timer={estimatedRemainingSec !== null && estimatedRemainingSec > 0 && safePercent < 100 ? estimatedRemainingSec : undefined}
         />
 
         <div className="flex items-center gap-2">
+          {inFlight > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-[10px] font-bold tracking-tight animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+              {inFlight} active in parallel
+            </span>
+          )}
           {safeTotal > 0 && (
             <span className="text-[11px] text-[#8C7B6B] font-mono font-semibold">
               {safeCurrent}/{safeTotal}
@@ -127,7 +148,7 @@ export function ChunkedProgressBar({ progress }) {
       {message && (
         <div className={cn(
           "text-[11px] px-3 py-2 rounded-xl border transition-all duration-300 font-medium flex items-center gap-2 break-words leading-relaxed",
-          message.includes('Resuming') || message.includes('limit') || message.includes('quota') || message.includes('busy')
+          message.includes('Resuming') || message.includes('limit') || message.includes('quota') || message.includes('busy') || message.includes('high demand')
             ? "bg-amber-50 text-amber-900 border-amber-300 shadow-sm"
             : "text-gray-600 bg-gray-50 border-gray-200"
         )}>
@@ -144,6 +165,8 @@ ChunkedProgressBar.propTypes = {
     current: PropTypes.number,
     total: PropTypes.number,
     stage: PropTypes.string,
-    message: PropTypes.string
+    message: PropTypes.string,
+    inFlight: PropTypes.number,
+    activePages: PropTypes.arrayOf(PropTypes.number)
   })
 };

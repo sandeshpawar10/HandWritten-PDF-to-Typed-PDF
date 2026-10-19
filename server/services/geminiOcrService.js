@@ -267,21 +267,43 @@ export async function runGeminiOCR(body, onProgress) {
       }
     }
 
-    if (completedCount > 0) {
-      console.log(`⚡ Instant Resume: ${completedCount}/${totalPages} pages restored from cache.`);
+    const activePages = new Set();
+    const emitProgress = (customMessage = null) => {
+      const inFlight = activePages.size;
+      // Weighted progress: completed pages count for 1.0, active pages in-flight count for 0.4
+      const weighted = completedCount + (inFlight * 0.4);
+      const computedPercent = Math.round((weighted / totalPages) * 100);
+      const minPercent = (completedCount > 0 || inFlight > 0) ? 5 : 0;
+      const percent = Math.min(95, Math.max(minPercent, computedPercent));
+      const sortedActive = Array.from(activePages).sort((a, b) => a - b);
+
+      let defaultMessage = `Transcribing ${inFlight} page${inFlight > 1 ? 's' : ''} in parallel (${sortedActive.slice(0, 6).map(p => `p.${p}`).join(', ')}${sortedActive.length > 6 ? '...' : ''}) • ${completedCount}/${totalPages} completed`;
+      if (inFlight === 0 && completedCount === totalPages) {
+        defaultMessage = `All ${totalPages} pages transcribed successfully.`;
+      }
+
       onProgress?.({
         stage: 'transcribing',
         current: completedCount,
         total: totalPages,
-        percent: Math.round((completedCount / totalPages) * 100),
-        message: `Restored ${completedCount} of ${totalPages} pages from cache. Resuming remaining ${pagesToProcess.length} page(s)...`
+        percent,
+        inFlight,
+        activePages: sortedActive,
+        message: customMessage || defaultMessage
       });
+    };
+
+    if (completedCount > 0) {
+      console.log(`⚡ Instant Resume: ${completedCount}/${totalPages} pages restored from cache.`);
+      emitProgress(`Restored ${completedCount} of ${totalPages} pages from cache. Resuming remaining ${pagesToProcess.length} page(s)...`);
     } else {
       onProgress?.({
         stage: 'rendering',
         current: 0,
         total: totalPages,
         percent: 0,
+        inFlight: 0,
+        activePages: [],
         message: `Starting parallel processing (${concurrency} page workers active across ${apiKeys.length} keys)...`
       });
     }
@@ -300,20 +322,15 @@ export async function runGeminiOCR(body, onProgress) {
 
           console.log(`[Worker ${workerId}] Processing page ${pageNum}/${totalPages}...`);
 
+          activePages.add(pageNum);
+          emitProgress();
+
           // Extract single page in-memory
           const singlePageDoc = await PDFDocument.create();
           const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
           singlePageDoc.addPage(copiedPage);
           const singlePageBytes = await singlePageDoc.save();
           const singlePageBase64 = Buffer.from(singlePageBytes).toString('base64');
-
-          onProgress?.({
-            stage: 'transcribing',
-            current: completedCount,
-            total: totalPages,
-            percent: Math.round((completedCount / totalPages) * 100),
-            message: `Transcribing page ${pageNum} of ${totalPages}...`
-          });
 
           try {
             const { text: pageText, model: usedModel } = await transcribePage({
@@ -323,13 +340,11 @@ export async function runGeminiOCR(body, onProgress) {
               prompt: OCR_SYSTEM_PROMPT,
               pageNum,
               onStatus: (msg) => {
-                onProgress?.({
-                  stage: 'transcribing',
-                  current: completedCount,
-                  total: totalPages,
-                  percent: Math.round((completedCount / totalPages) * 100),
-                  message: msg
-                });
+                const otherActive = Array.from(activePages).filter(p => p !== pageNum).sort((a, b) => a - b);
+                const activeContext = otherActive.length > 0
+                  ? `${msg} (${otherActive.length} other page${otherActive.length > 1 ? 's' : ''} active)`
+                  : msg;
+                emitProgress(activeContext);
               }
             });
 
@@ -340,16 +355,13 @@ export async function runGeminiOCR(body, onProgress) {
             const formattedPage = `--- Page ${pageNum} ---\n\n${pageText}`;
             results[i] = formattedPage;
             saveCachedPage(cacheKey, formattedPage, pageAst);
+            
+            activePages.delete(pageNum);
             completedCount++;
-
-            onProgress?.({
-              stage: 'transcribing',
-              current: completedCount,
-              total: totalPages,
-              percent: Math.round((completedCount / totalPages) * 100),
-              message: `Page ${pageNum} completed (${completedCount}/${totalPages} finished).`
-            });
+            emitProgress(`Page ${pageNum} completed (${completedCount}/${totalPages} finished).`);
           } catch (pageErr) {
+            activePages.delete(pageNum);
+            emitProgress();
             console.error(`[Worker ${workerId}] Error on page ${pageNum}:`, pageErr.message);
             throw {
               status: 500,

@@ -280,7 +280,13 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
                         {/* Status Badge using Rare UI Inline AI Status */}
                         <InlineAIStatus
                           state={job.status === 'converting' ? (processingProgress?.stage === 'formatting' ? 'formatting' : processingProgress?.stage === 'verifying' ? 'verifying' : 'ocr') : job.status}
-                          detail={processingProgress?.jobId === job.id && processingProgress?.total > 0 ? `${processingProgress.current}/${processingProgress.total}` : undefined}
+                          detail={
+                            processingProgress?.jobId === job.id && processingProgress?.total > 0
+                              ? (processingProgress?.inFlight > 0
+                                  ? `${processingProgress.current}/${processingProgress.total} (${processingProgress.inFlight} active)`
+                                  : `${processingProgress.current}/${processingProgress.total}`)
+                              : undefined
+                          }
                         />
 
                         {/* Download button for completed */}

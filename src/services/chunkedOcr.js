@@ -199,6 +199,8 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
                 current: event.current_page ?? event.current ?? 0,
                 total: event.total_pages ?? event.total ?? 0,
                 percent: event.percent ?? Math.round(((event.current_page || 0) / (event.total_pages || 1)) * 100),
+                inFlight: event.inFlight ?? 0,
+                activePages: event.activePages || [],
                 message: event.message || `Processing page ${event.current_page || 0} of ${event.total_pages || 0}...`
               });
             } else if (event.type === 'result') {
