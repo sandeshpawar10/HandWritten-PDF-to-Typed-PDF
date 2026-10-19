@@ -239,6 +239,14 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
 
   const pdfDoc = await PDFDocument.create();
 
+  // Set standard PDF document metadata identifying TypedDoc renderer
+  pdfDoc.setTitle(title || 'TypedDoc Document');
+  pdfDoc.setAuthor('TypedDoc');
+  pdfDoc.setCreator('TypedDoc Server PDF Engine');
+  pdfDoc.setProducer('TypedDoc PDF Renderer');
+  pdfDoc.setSubject('AI-transcribed formatted document');
+  pdfDoc.setCreationDate(new Date());
+
   // Layout metrics
   const MARGIN_LEFT = compactTypography ? 36 : 50;
   const MARGIN_RIGHT = compactTypography ? 36 : 50;
@@ -716,8 +724,9 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
       color: COLOR_MUTED
     });
 
-    // Footer: System watermark
-    page.drawText('TypedDoc • High-Fidelity Transcription', {
+    // Footer: System watermark / renderer provenance label
+    const layoutLabel = pageMode === 'faithful' ? 'Faithful Source Pages' : 'Clean Reflow';
+    page.drawText(`TypedDoc Server PDF Renderer • Layout: ${layoutLabel}`, {
       x: MARGIN_LEFT,
       y: 24,
       size: 8,
@@ -743,7 +752,7 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
     }
   }
 
-  const pdfBytes = await pdfDoc.save();
+  const pdfBytes = await pdfDoc.save({ updateMetadata: false });
   const buffer = Buffer.from(pdfBytes);
 
   // Attach execution metadata to buffer
@@ -751,6 +760,8 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
   buffer.pageMode = pageMode;
   buffer.sourcePageCount = sourcePageCount;
   buffer.expansionRatio = sourcePageCount ? Number((totalPages / sourcePageCount).toFixed(3)) : null;
+  buffer.renderer = 'pdf-lib';
+  buffer.pdfSource = 'server-pdf';
 
   return buffer;
 }
@@ -765,6 +776,8 @@ export async function exportPdfWithStats(title, markdownContent, options = {}) {
     pageCount: buffer.pageCount,
     pageMode: buffer.pageMode,
     sourcePageCount: buffer.sourcePageCount,
-    expansionRatio: buffer.expansionRatio
+    expansionRatio: buffer.expansionRatio,
+    renderer: buffer.renderer,
+    pdfSource: buffer.pdfSource
   };
 }

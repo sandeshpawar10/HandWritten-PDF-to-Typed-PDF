@@ -1,17 +1,19 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { FileText, Download, Eye, X, BookOpen } from 'lucide-react';
 import { downloadBase64File } from '../services/formattedOcr';
 import { MarkdownPreview } from './MarkdownPreview';
 import { toast } from './Toast';
+import { RailTOC } from './rare';
 
 /**
  * FormattedDocumentViewer Component
  * Displays formatted PDF with download options for PDF and DOCX.
- * Includes interactive reading view tab fallback so preview is never blank.
+ * Includes interactive reading view tab fallback with RailTOC outline so preview is never blank.
  */
 export function FormattedDocumentViewer({ formattedPdf, formattedDocx, content = '', filename = 'document.pdf', onClose }) {
   const [activeTab, setActiveTab] = useState(formattedPdf ? 'pdf' : 'markdown');
+  const markdownScrollRef = useRef(null);
 
   useEffect(() => {
     const handleEsc = (e) => {
@@ -190,12 +192,20 @@ export function FormattedDocumentViewer({ formattedPdf, formattedDocx, content =
           )}
 
           {activeTab === 'markdown' && (
-            <div className="w-full h-full overflow-y-auto p-4 sm:p-8 bg-white">
-              <div className="max-w-3xl mx-auto">
-                {content ? (
-                  <MarkdownPreview content={content} />
-                ) : (
-                  <p className="text-sm text-gray-500 italic">No document text available.</p>
+            <div ref={markdownScrollRef} className="w-full h-full overflow-y-auto p-4 sm:p-8 bg-[#FFFBF5]">
+              <div className="max-w-5xl mx-auto flex gap-8 items-start">
+                <div className="flex-1 min-w-0 max-w-3xl bg-white p-6 sm:p-10 rounded-2xl border border-[#E8DFD0] shadow-sm">
+                  {content ? (
+                    <MarkdownPreview content={content} />
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">No document text available.</p>
+                  )}
+                </div>
+
+                {content && (
+                  <div className="hidden lg:block w-64 shrink-0 sticky top-0">
+                    <RailTOC content={content} containerRef={markdownScrollRef} />
+                  </div>
                 )}
               </div>
             </div>

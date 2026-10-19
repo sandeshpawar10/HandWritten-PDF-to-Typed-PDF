@@ -4,6 +4,7 @@ import { rateLimiter, ocrRateLimiter } from '../middleware/rateLimit.js';
 import { handleOcr, handleClearCache, handlePoolStats } from '../controllers/apiController.js';
 import { handleFormattedOcr } from '../controllers/formattedOcrController.js';
 import { handleChunkedOcr } from '../controllers/chunkedOcrController.js';
+import { handleRenderPdf } from '../controllers/renderController.js';
 
 const router = express.Router();
 
@@ -12,6 +13,9 @@ router.use(requireAuth);
 
 // Apply general rate limiting
 router.use(rateLimiter);
+
+// PDF and document rendering endpoint
+router.post('/render/pdf', handleRenderPdf);
 
 // OCR endpoints with stricter rate limiting
 router.post('/ocr', ocrRateLimiter, handleOcr);

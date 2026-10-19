@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
-import { Save, ArrowLeft, Loader2, Check, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles, Menu, X, Columns } from 'lucide-react';
+import { Save, ArrowLeft, Loader2, Check, RotateCcw, BarChart3, Eye, Pencil, Download, FileText, FileType, FileDown, Sparkles, Menu, X, Columns, Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { updateDocument, saveVersion } from '../services/documents';
-import { exportToDocx, exportToPdf, exportToTxt } from '../services/export';
+import { exportToDocx, exportServerPdf, exportToTxt, printCurrentView } from '../services/export';
 import { MarkdownPreview } from './MarkdownPreview';
 import { ConfirmDialog } from './ConfirmDialog';
+import { AnimatedCounter, RailTOC } from './rare';
 import { cn } from '../lib/utils';
 
 export function Editor({ doc, onBack, versions }) {
@@ -160,19 +161,21 @@ export function Editor({ doc, onBack, versions }) {
       if (format === 'docx') {
         await exportToDocx(title, content);
       } else if (format === 'pdf') {
-        // Lazy-render the print container, then export
+        // Authoritative server-rendered PDF
+        await exportServerPdf(title, content, { pageMode: pdfPageMode });
+      } else if (format === 'print') {
+        // Explicit browser print action
         setShowPrintPreview(true);
         setMode('preview');
-        // Wait for React to render the MarkdownPreview inside the print container
-        await new Promise(r => setTimeout(r, 800));
-        await exportToPdf(title, content, { pageMode: pdfPageMode });
+        await new Promise(r => setTimeout(r, 600));
+        await printCurrentView(title, content, { pageMode: pdfPageMode });
       } else {
         await exportToTxt(title, content);
       }
     } finally {
       setTimeout(() => {
         setIsExporting(null);
-        if (format === 'pdf') {
+        if (format === 'print') {
           const cleanupPrint = () => {
             setShowPrintPreview(false);
             window.removeEventListener('afterprint', cleanupPrint);
@@ -219,9 +222,10 @@ export function Editor({ doc, onBack, versions }) {
                 "bg-white/80 backdrop-blur-sm border border-[#E8DFD0] text-[#3D2E1C] hover:bg-white hover:border-[#8B5E3C]/30 rounded-xl font-bold transition-all flex items-center justify-center py-3 gap-2 shadow-sm hover:shadow-md magnetic",
                 isExporting && "opacity-60 cursor-wait"
               )}
+              title="Download authentic server-rendered PDF"
             >
               {isExporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-              {isExporting === 'pdf' ? '…' : 'PDF'}
+              {isExporting === 'pdf' ? '…' : 'Server PDF'}
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.05, y: -2 }}
@@ -237,6 +241,22 @@ export function Editor({ doc, onBack, versions }) {
               {isExporting === 'txt' ? '…' : 'TXT'}
             </motion.button>
           </div>
+
+          {/* Explicit Browser Print Action */}
+          <motion.button
+            whileHover={{ scale: 1.02, y: -1 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleExport('print')}
+            disabled={!!isExporting}
+            className={cn(
+              "w-full py-2.5 px-3 rounded-xl border border-[#E8DFD0] bg-[#FFFBF5]/80 hover:bg-[#E8DFD0]/40 text-[#5C4A38] text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-2xs",
+              isExporting && "opacity-60 cursor-wait"
+            )}
+            title="Open browser print dialog for current view"
+          >
+            {isExporting === 'print' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5 text-[#8B5E3C]" />}
+            <span>Print Current View</span>
+          </motion.button>
 
           {/* PDF Page Mode Selector */}
           <div className="mt-3 pt-2.5 border-t border-[#E8DFD0]/60 flex items-center justify-between text-[11px]">
@@ -277,14 +297,35 @@ export function Editor({ doc, onBack, versions }) {
       >
         <h4 className="text-sm font-bold text-[#8C7B6B] flex items-center gap-2 mb-6"><BarChart3 className="w-4 h-4 text-[#8B5E3C]" /> Document Stats</h4>
         <div className="space-y-4">
-          {[{label:'Words',value:stats.words.toLocaleString()},{label:'Chars',value:stats.chars.toLocaleString()},{label:'Read',value:`${stats.readTime}m`},{label:'Pages',value:stats.pages}].map(({label,value}) => (
-            <div key={label} className="flex justify-between items-center">
-              <span className="text-sm font-medium text-[#8C7B6B]">{label}</span>
-              <span className="text-sm font-bold text-[#3D2E1C]">{value}</span>
-            </div>
-          ))}
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium text-[#8C7B6B]">Words</span>
+            <AnimatedCounter value={stats.words} className="text-sm text-[#3D2E1C]" />
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium text-[#8C7B6B]">Chars</span>
+            <AnimatedCounter value={stats.chars} className="text-sm text-[#3D2E1C]" />
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium text-[#8C7B6B]">Read</span>
+            <span className="text-sm font-bold text-[#3D2E1C]">{stats.readTime}m</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium text-[#8C7B6B]">Pages</span>
+            <AnimatedCounter value={stats.pages} className="text-sm text-[#3D2E1C]" />
+          </div>
         </div>
       </motion.div>
+
+      {/* Rare UI Rail TOC Outline */}
+      {content && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
+          <RailTOC content={content} />
+        </motion.div>
+      )}
 
       <motion.div
         initial={{ opacity: 0, y: 10 }}

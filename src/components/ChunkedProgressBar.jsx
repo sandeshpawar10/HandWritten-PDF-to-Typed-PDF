@@ -1,15 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import PropTypes from 'prop-types';
-import { Loader2, CheckCircle2, UploadCloud, Layers, Cpu, ShieldCheck, FileCheck } from 'lucide-react';
+import { StepPlayer, InlineAIStatus } from './rare';
 import { cn } from '../lib/utils';
-
-const STAGES = [
-  { id: 'upload', label: 'Upload', icon: UploadCloud },
-  { id: 'render', label: 'Render', icon: Layers },
-  { id: 'transcribe', label: 'Transcribe', icon: Cpu },
-  { id: 'verify', label: 'Verify', icon: ShieldCheck },
-  { id: 'format', label: 'Format', icon: FileCheck }
-];
 
 export function ChunkedProgressBar({ progress }) {
   const [estimatedRemainingSec, setEstimatedRemainingSec] = useState(null);
@@ -43,13 +35,25 @@ export function ChunkedProgressBar({ progress }) {
   const safeTotal = Number.isFinite(progress?.total) ? progress.total : 0;
   const message = progress?.message || '';
 
-  // Determine active stage
+  // Determine active stage for StepPlayer
   let activeStageIndex = 0;
-  if (safePercent >= 100) activeStageIndex = 4;
-  else if (progress?.stage === 'formatting' || safePercent >= 90) activeStageIndex = 4;
-  else if (progress?.stage === 'verifying' || safePercent >= 80) activeStageIndex = 3;
-  else if (progress?.stage === 'transcribing' || safeCurrent > 0) activeStageIndex = 2;
-  else if (progress?.stage === 'rendering' || safePercent > 0) activeStageIndex = 1;
+  let aiState = 'queued';
+  if (safePercent >= 100) {
+    activeStageIndex = 5;
+    aiState = 'done';
+  } else if (progress?.stage === 'formatting' || safePercent >= 90) {
+    activeStageIndex = 4;
+    aiState = 'formatting';
+  } else if (progress?.stage === 'verifying' || safePercent >= 80) {
+    activeStageIndex = 3;
+    aiState = 'verifying';
+  } else if (progress?.stage === 'transcribing' || safeCurrent > 0) {
+    activeStageIndex = 2;
+    aiState = 'ocr';
+  } else if (progress?.stage === 'rendering' || safePercent > 0) {
+    activeStageIndex = 1;
+    aiState = 'reading';
+  }
 
   // Dynamic ETA calculation
   useEffect(() => {
@@ -67,37 +71,12 @@ export function ChunkedProgressBar({ progress }) {
 
   return (
     <div className="w-full space-y-4" aria-live="polite">
-      {/* 5-Stage Step Timeline */}
-      <div className="grid grid-cols-5 gap-1 sm:gap-2">
-        {STAGES.map((stage, idx) => {
-          const Icon = stage.icon;
-          const isDone = idx < activeStageIndex || safePercent >= 100;
-          const isCurrent = idx === activeStageIndex && safePercent < 100;
-          return (
-            <div
-              key={stage.id}
-              className={cn(
-                "flex flex-col items-center p-1.5 sm:p-2 rounded-xl transition-all duration-300 text-center",
-                isCurrent && "bg-blue-50 border border-blue-200 shadow-xs",
-                isDone && "text-blue-700 bg-blue-50/50",
-                !isDone && !isCurrent && "text-gray-400 opacity-60"
-              )}
-            >
-              <div className="flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 rounded-lg mb-1">
-                {isDone ? (
-                  <CheckCircle2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-blue-600" />
-                ) : isCurrent ? (
-                  <Loader2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-blue-600 animate-spin" />
-                ) : (
-                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                )}
-              </div>
-              <span className="text-[10px] sm:text-[11px] font-bold tracking-tight">
-                {stage.label}
-              </span>
-            </div>
-          );
-        })}
+      {/* Rare UI Step Player Timeline */}
+      <div className="px-1 py-1 rounded-2xl bg-white/60 border border-[#E8DFD0]/60">
+        <StepPlayer
+          activeStepIndex={activeStageIndex}
+          isError={progress?.status === 'error'}
+        />
       </div>
 
       {/* Progress Bar */}
@@ -127,37 +106,17 @@ export function ChunkedProgressBar({ progress }) {
         )}
       </div>
 
-      {/* Status & ETA */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
-        <div className="flex items-center gap-2">
-          {safePercent < 100 ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
-              <span className="font-medium text-gray-700">
-                {safeTotal > 0 ? (
-                  safeCurrent > 0 ? (
-                    <>Completed <span className="text-blue-600 font-bold">{safeCurrent}</span> of {safeTotal} pages</>
-                  ) : (
-                    <>Processing <span className="text-blue-600 font-bold">{safeTotal}</span> pages in parallel...</>
-                  )
-                ) : (
-                  'Starting transcription...'
-                )}
-              </span>
-            </>
-          ) : (
-            <span className="font-semibold text-green-600">✓ All pages completed!</span>
-          )}
-        </div>
+      {/* Rare UI Inline AI Status & Progress */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <InlineAIStatus
+          state={aiState}
+          detail={safeTotal > 0 ? `${safeCurrent}/${safeTotal} pages` : undefined}
+          timer={estimatedRemainingSec !== null && estimatedRemainingSec > 0 && safePercent < 100 ? estimatedRemainingSec : undefined}
+        />
 
         <div className="flex items-center gap-2">
-          {estimatedRemainingSec !== null && estimatedRemainingSec > 0 && safePercent < 100 && (
-            <span className="text-[11px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-              ~{estimatedRemainingSec}s remaining
-            </span>
-          )}
           {safeTotal > 0 && (
-            <span className="text-[11px] text-gray-500 font-mono">
+            <span className="text-[11px] text-[#8C7B6B] font-mono font-semibold">
               {safeCurrent}/{safeTotal}
             </span>
           )}

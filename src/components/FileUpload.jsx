@@ -1,12 +1,13 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileImage, FileText, Loader2, X, Download, AlertCircle, CheckCircle2, Clock, RotateCw, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { exportToPdf } from '../services/export';
 import { toast } from './Toast';
 import { ChunkedProgressBar } from './ChunkedProgressBar';
 import { downloadBase64File } from '../services/chunkedOcr';
+import { InlineAIStatus, AnimatedCounter, DeleteButton } from './rare';
+import { addNotification } from '../lib/notifications';
 
 // File size limits - prevent backend OOM
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
@@ -72,6 +73,29 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
   const completed = jobs.filter(j => j.status === 'completed').length;
   const processing = jobs.filter(j => j.status === 'converting' || j.status === 'pending').length;
   const total = jobs.length;
+
+  // Emit durable notifications when jobs complete or fail
+  useEffect(() => {
+    jobs.forEach(job => {
+      if (job.status === 'completed' && !job._notified) {
+        job._notified = true;
+        addNotification({
+          title: 'Document transcribed',
+          message: `${job.file.name} was successfully transcribed.`,
+          type: 'success',
+          docId: job.id
+        });
+      } else if (job.status === 'failed' && !job._notified) {
+        job._notified = true;
+        addNotification({
+          title: 'Transcription failed',
+          message: `${job.file.name}: ${job.error || 'Server error occurred'}`,
+          type: 'error',
+          docId: job.id
+        });
+      }
+    });
+  }, [jobs]);
 
   const statusConfig = {
     pending:    { label: 'Queued',     icon: Clock,         color: 'text-[#8C7B6B]',  bg: 'bg-[#8C7B6B]/10' },
@@ -204,7 +228,9 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
                 </motion.div>
               )}
               <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-white/60 backdrop-blur-sm border border-[#E8DFD0]">
-                <span className="text-[11px] sm:text-xs font-bold text-[#8C7B6B]">{completed}/{total} completed</span>
+                <span className="text-[11px] sm:text-xs font-bold text-[#8C7B6B] flex items-center gap-1">
+                  <AnimatedCounter value={completed} />/<AnimatedCounter value={total} /> completed
+                </span>
               </div>
             </div>
           </div>
@@ -213,7 +239,6 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
             <AnimatePresence initial={false}>
               {jobs.map(job => {
                 const cfg = statusConfig[job.status];
-                const StatusIcon = cfg.icon;
                 const TypeIcon = getFileIcon(job.file.name);
                 return (
                   <motion.div
@@ -252,33 +277,38 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
 
                       {/* Right: Status Badge & Action Buttons */}
                       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                        {/* Status Badge */}
-                        <div className={cn(
-                          "flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold border shadow-xs whitespace-nowrap",
-                          cfg.bg,
-                          cfg.color
-                        )}>
-                          <StatusIcon className={cn("w-3 h-3 sm:w-3.5 sm:h-3.5", job.status === 'converting' && "animate-spin")} />
-                          <span>{cfg.label}</span>
-                        </div>
+                        {/* Status Badge using Rare UI Inline AI Status */}
+                        <InlineAIStatus
+                          state={job.status === 'converting' ? (processingProgress?.stage === 'formatting' ? 'formatting' : processingProgress?.stage === 'verifying' ? 'verifying' : 'ocr') : job.status}
+                          detail={processingProgress?.jobId === job.id && processingProgress?.total > 0 ? `${processingProgress.current}/${processingProgress.total}` : undefined}
+                        />
 
                         {/* Download button for completed */}
-                        {job.status === 'completed' && (job.formattedPdf || job.content) && (
+                        {job.status === 'completed' && (
                           <motion.button
                             type="button"
                             whileHover={{ scale: 1.08 }}
                             whileTap={{ scale: 0.92 }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (job.formattedPdf) {
-                                downloadBase64File(job.formattedPdf, `${job.file.name.replace(/\.[^/.]+$/, '')}.pdf`, 'application/pdf');
-                              } else {
-                                exportToPdf(job.file.name.replace(/\.[^/.]+$/, ''), job.content);
+                              if (!job.formattedPdf) {
+                                toast.error('Server-formatted PDF was not generated. Please retry the conversion.');
+                                return;
                               }
+                              downloadBase64File(
+                                job.formattedPdf,
+                                `${job.file.name.replace(/\.[^/.]+$/, '')}_formatted.pdf`,
+                                'application/pdf'
+                              );
                             }}
-                            title="Download formatted PDF"
+                            title={job.formattedPdf ? "Download server-formatted PDF" : "Server PDF unavailable"}
                             aria-label="Download formatted PDF"
-                            className="min-w-[36px] min-h-[36px] p-2 rounded-xl bg-white/90 border border-[#E8DFD0] hover:bg-[#8B5E3C]/10 hover:border-[#8B5E3C]/30 hover:text-[#8B5E3C] text-[#8C7B6B] flex items-center justify-center transition-all shadow-xs"
+                            className={cn(
+                              "min-w-[36px] min-h-[36px] p-2 rounded-xl bg-white/90 border border-[#E8DFD0] transition-all shadow-xs flex items-center justify-center",
+                              job.formattedPdf
+                                ? "hover:bg-[#8B5E3C]/10 hover:border-[#8B5E3C]/30 hover:text-[#8B5E3C] text-[#8C7B6B]"
+                                : "opacity-40 cursor-not-allowed text-[#8C7B6B]"
+                            )}
                           >
                             <Download className="w-4 h-4" />
                           </motion.button>
@@ -307,21 +337,28 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
                           </motion.button>
                         )}
 
-                        {/* Remove / Cancel button */}
-                        <motion.button
-                          type="button"
-                          whileHover={{ scale: 1.08 }}
-                          whileTap={{ scale: 0.92 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRemoveJob(job.id);
-                          }}
-                          title={job.status === 'converting' ? "Cancel conversion" : "Remove"}
-                          aria-label={job.status === 'converting' ? "Cancel conversion" : "Remove"}
-                          className="min-w-[36px] min-h-[36px] p-2 rounded-xl text-[#8C7B6B] hover:text-red-500 hover:bg-red-50/80 border border-transparent hover:border-red-200 flex items-center justify-center transition-all"
-                        >
-                          <X className="w-4 h-4" />
-                        </motion.button>
+                        {/* Remove / Cancel button using Rare UI DeleteButton for completed/failed */}
+                        {job.status === 'converting' ? (
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.08 }}
+                            whileTap={{ scale: 0.92 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemoveJob(job.id);
+                            }}
+                            title="Cancel conversion"
+                            aria-label="Cancel conversion"
+                            className="min-w-[36px] min-h-[36px] p-2 rounded-xl text-[#8C7B6B] hover:text-red-500 hover:bg-red-50/80 border border-transparent hover:border-red-200 flex items-center justify-center transition-all"
+                          >
+                            <X className="w-4 h-4" />
+                          </motion.button>
+                        ) : (
+                          <DeleteButton
+                            onConfirm={() => onRemoveJob(job.id)}
+                            aria-label={`Remove ${job.file.name}`}
+                          />
+                        )}
                       </div>
                     </div>
 

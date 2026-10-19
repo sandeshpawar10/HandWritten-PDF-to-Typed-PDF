@@ -3,7 +3,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import {
   Plus, LogOut, Search, Files, Sparkles, User, ArrowRight,
   AlertTriangle, X, Menu, Table2, Zap, Shield,
-  LayoutDashboard, BookOpen
+  LayoutDashboard, BookOpen, HelpCircle
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut } from './lib/firebase';
 import { subscribeToDocuments, createDocument, subscribeToVersions } from './services/documents';
@@ -14,6 +14,7 @@ import { Editor } from './components/Editor';
 import { OfflineBanner } from './components/OfflineBanner';
 import { ToastContainer, toast } from './components/Toast';
 import { FormattedDocumentViewer } from './components/FormattedDocumentViewer';
+import { NotificationBell, FAQDrawer, AnimatedCounter } from './components/rare';
 
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -37,6 +38,7 @@ export default function App() {
   const [authError, setAuthError] = useState(null);
   const [formattedDocument, setFormattedDocument] = useState(null);
   const [processingProgress, setProcessingProgress] = useState(null);
+  const [showFaq, setShowFaq] = useState(false);
 
   const handleSignIn = async () => {
     setAuthError(null);
@@ -113,6 +115,8 @@ export default function App() {
         formattedDocx: result.formattedDocx,
         totalPages: result.totalPages,
         pagesProcessed: result.pagesProcessed,
+        clientSide: result.clientSide,
+        pdfSource: result.pdfSource || (result.formattedPdf ? 'server-pdf' : 'unavailable'),
         error: undefined,
         progressMessage: undefined
       } : j));
@@ -126,8 +130,11 @@ export default function App() {
         });
       }
 
-      const method = result.clientSide ? '(browser-based OCR)' : '';
-      toast.success(`✨ Document formatted successfully! (${result.pagesProcessed || 1} pages processed) ${method}`);
+      if (result.clientSide) {
+        toast.info('OCR completed in browser mode. Server-formatted PDF is unavailable. Please retry with a stable connection.');
+      } else {
+        toast.success(`✨ Document formatted successfully! (${result.pagesProcessed || 1} pages processed)`);
+      }
 
     } catch (err) {
       if (controller.signal.aborted || err?.name === 'AbortError') {
@@ -396,15 +403,26 @@ export default function App() {
           <BookOpen className="w-5 h-5 text-[#8B5E3C]" />
         </div>
         <span className="font-serif font-black text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">TypedDoc</span>
-        <button onClick={() => setMobileSidebar(false)} className="ml-auto p-2 rounded-xl bg-white/80 border border-[#E8DFD0] shadow-sm md:hidden text-[#3D2E1C] hover:bg-white hover:scale-105 transition-all magnetic">
-          <X className="w-4 h-4" />
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <NotificationBell onSelectDoc={id => { const d = documents.find(doc => doc.id === id); if (d) { setSelectedDoc(d); setView('edit'); } }} />
+          <button onClick={() => setMobileSidebar(false)} className="p-2 rounded-xl bg-white/80 border border-[#E8DFD0] shadow-sm md:hidden text-[#3D2E1C] hover:bg-white hover:scale-105 transition-all magnetic">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </motion.div>
 
       <nav className="flex-1 px-4 space-y-2 mt-4">
         <p className="px-4 text-[11px] font-bold text-[#8C7B6B] tracking-wide mb-4">Menu</p>
         <NavButton id="list" icon={LayoutDashboard} label="Documents" badge={documents.length || null} />
         <NavButton id="upload" icon={Plus} label="Upload" />
+        <button
+          type="button"
+          onClick={() => setShowFaq(true)}
+          className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-[14px] font-medium text-[#8C7B6B] hover:text-[#3D2E1C] hover:bg-[#F5F0E8] transition-all group"
+        >
+          <HelpCircle className="w-5 h-5 shrink-0 opacity-60 group-hover:opacity-100 text-[#8B5E3C]" />
+          <span>Help & FAQ</span>
+        </button>
       </nav>
 
       <div className="p-4 mt-auto">
@@ -491,7 +509,11 @@ export default function App() {
                         {view === 'list' ? 'Your Documents' : 'Upload & Convert'}
                       </h2>
                       <p className="text-[13px] text-[#8C7B6B] font-medium mt-1">
-                        {view === 'list' ? `${documents.length} documents` : ''}
+                        {view === 'list' ? (
+                          <span className="flex items-center gap-1">
+                            <AnimatedCounter value={documents.length} /> documents
+                          </span>
+                        ) : ''}
                       </p>
                     </div>
                   </div>
@@ -553,6 +575,12 @@ export default function App() {
           onClose={() => setFormattedDocument(null)}
         />
       )}
+
+      {/* Rare UI FAQ & Help Drawer */}
+      <FAQDrawer
+        isOpen={showFaq}
+        onClose={() => setShowFaq(false)}
+      />
     </div>
   );
 }

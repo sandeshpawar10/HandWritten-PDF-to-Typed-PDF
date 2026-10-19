@@ -4,6 +4,12 @@ import {
   HeadingLevel, Table, TableRow, TableCell, WidthType,
   BorderStyle, AlignmentType
 } from 'docx';
+import { auth } from '../lib/firebase.js';
+
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD
+  ? "https://typeddoc.onrender.com"
+  : "http://localhost:3001");
+const RENDER_PDF_URL = `${API_BASE}/api/v1/render/pdf`;
 
 // ── Markdown parser helpers ──
 
@@ -299,7 +305,81 @@ export const exportToDocx = async (title, content) => {
   saveAs(blob, `${title}.docx`);
 }
 
+/**
+ * Request real server-generated PDF with embedded metadata and academic typography.
+ * Strictly downloads the authentic server binary (*_formatted.pdf).
+ */
+export async function exportServerPdf(title, content, options = {}) {
+  const { pageMode = 'clean-reflow' } = options;
+
+  if (!content || !content.trim()) {
+    throw new Error('Cannot export empty document to PDF.');
+  }
+
+  let token = null;
+  if (auth?.currentUser) {
+    try {
+      token = await auth.currentUser.getIdToken();
+    } catch (e) {
+      console.warn('Could not retrieve auth token for PDF render:', e.message);
+    }
+  }
+
+  const res = await fetch(RENDER_PDF_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({
+      title: title || 'TypedDoc Document',
+      content,
+      pageMode
+    })
+  });
+
+  if (!res.ok) {
+    let errMsg = `Failed to generate PDF (HTTP ${res.status})`;
+    try {
+      const data = await res.json();
+      errMsg = data.error || errMsg;
+    } catch {
+      // ignore JSON parse error
+    }
+    throw new Error(errMsg);
+  }
+
+  const data = await res.json();
+  if (!data.formattedPdf) {
+    throw new Error('Server returned an empty PDF payload.');
+  }
+
+  // Download the authentic server-generated PDF binary
+  const byteCharacters = atob(data.formattedPdf);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: 'application/pdf' });
+  const safeTitle = (title || 'document').replace(/[/\\?%*:|"<>]/g, '_').trim();
+  saveAs(blob, `${safeTitle}_formatted.pdf`);
+
+  return data;
+}
+
+/**
+ * Authoritative PDF export: Delegates directly to server renderer.
+ */
 export async function exportToPdf(title, content, options = {}) {
+  return await exportServerPdf(title, content, options);
+}
+
+/**
+ * Browser-print generator using window.print().
+ * Kept strictly for the explicitly labelled "Print Current View" action.
+ */
+export async function printCurrentView(title, content, options = {}) {
   const { pageMode = 'clean-reflow' } = options;
 
   // Find the dedicated print container, or generate from content as fallback

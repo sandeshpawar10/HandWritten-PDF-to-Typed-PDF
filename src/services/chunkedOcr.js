@@ -291,7 +291,13 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
     formattedPdf: finalResult.formatted_pdf || finalResult.formattedPdf,
     formattedDocx: finalResult.formatted_docx || finalResult.formattedDocx,
     totalPages: finalResult.total_pages || finalResult.totalPages,
-    pagesProcessed: finalResult.pages_processed || finalResult.pagesProcessed
+    pagesProcessed: finalResult.pages_processed || finalResult.pagesProcessed,
+    pdfSource: finalResult.pdfSource || (finalResult.formatted_pdf || finalResult.formattedPdf ? 'server-pdf' : 'unavailable'),
+    renderer: finalResult.renderer || 'pdf-lib',
+    pageMode: finalResult.pageMode,
+    pageCount: finalResult.pageCount,
+    sourcePageCount: finalResult.sourcePageCount,
+    expansionRatio: finalResult.expansionRatio
   };
 }
 
@@ -380,7 +386,8 @@ export async function convertWithFallback(file, onProgress, externalSignal) {
         formattedDocx: null,
         totalPages: clientResult.totalPages || 1,
         pagesProcessed: clientResult.pagesProcessed || 1,
-        clientSide: true
+        clientSide: true,
+        pdfSource: 'unavailable'
       };
     }
     throw error;

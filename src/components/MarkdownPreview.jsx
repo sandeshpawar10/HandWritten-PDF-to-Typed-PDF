@@ -48,6 +48,33 @@ function renderDisplayMath(tex) {
 }
 
 // ─────────────────────────────────────────────
+//  Rare UI Code Block Renderer
+// ─────────────────────────────────────────────
+function renderCodeBlockHtml(codeText, lang = '') {
+  const cleanLang = (lang || 'code').toLowerCase().trim();
+  const lines = codeText.split('\n');
+  const encodedCode = encodeURIComponent(codeText);
+  const lineNumbersHtml = lines.map((_, idx) => `<div class="md-code-line-num leading-6 text-[11px]">${idx + 1}</div>`).join('');
+  const codeLinesHtml = lines.map(line => `<div class="md-code-line whitespace-pre leading-6">${escapeHtml(line || ' ')}</div>`).join('');
+
+  return `
+    <div class="md-code-block-container my-4 rounded-2xl overflow-hidden border border-[#3D2E1C]/20 bg-[#1E1A17] text-[#F5F0E8] shadow-md font-mono text-[12px]">
+      <div class="flex items-center justify-between px-4 py-2 bg-[#28221D] border-b border-[#3D2E1C]/30 text-[11px] text-[#A69788]">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-[#C4853C]"></span>
+          <span class="uppercase tracking-wider font-semibold text-[10px] text-[#E8DFD0]">${escapeHtml(cleanLang)}</span>
+        </div>
+        <button type="button" class="md-code-copy-btn px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 hover:text-white transition-colors text-[10px] font-medium" data-code="${encodedCode}">Copy</button>
+      </div>
+      <div class="overflow-auto p-4 flex leading-relaxed max-h-[420px]">
+        <div class="select-none text-right pr-4 text-[#66584C] font-mono border-r border-[#3D2E1C]/40">${lineNumbersHtml}</div>
+        <pre class="pl-4 flex-1 m-0 overflow-visible font-mono leading-relaxed"><code>${codeLinesHtml}</code></pre>
+      </div>
+    </div>
+  `.trim();
+}
+
+// ─────────────────────────────────────────────
 //  Inline formatter
 //  ORDER IS CRITICAL:
 //    1. Extract math segments FIRST (before any escaping)
@@ -208,7 +235,7 @@ function parseMarkdown(md) {
     // ── Fenced code block ──
     if (trimmed.startsWith("```")) {
       if (inCodeBlock) {
-        out.push(`<pre class="md-code-block"><code${codeLang ? ` class="language-${escapeHtml(codeLang)}"` : ""}>${escapeHtml(codeContent.join("\n"))}</code></pre>`);
+        out.push(renderCodeBlockHtml(codeContent.join("\n"), codeLang));
         codeContent = []; codeLang = ""; inCodeBlock = false;
       } else {
         closeList();
@@ -219,8 +246,6 @@ function parseMarkdown(md) {
     }
     if (inCodeBlock) { codeContent.push(line); i++; continue; }
 
-
-
     // Preserve un-fenced C-like code emitted by OCR, including its line breaks.
     if (/^(?:#include\b|main\s*\(|(?:void|int|float|double|char|bool)\b)/.test(trimmed)) {
       closeList();
@@ -229,7 +254,7 @@ function parseMarkdown(md) {
         codeLines.push(lines[i]);
         i++;
       }
-      out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      out.push(renderCodeBlockHtml(codeLines.join("\n"), "c"));
       continue;
     }
 
@@ -325,7 +350,9 @@ function parseMarkdown(md) {
     if (hm) {
       closeList();
       const lvl = hm[1].length;
-      out.push(`<h${lvl} class="md-h${lvl}">${inlineFormat(hm[2])}</h${lvl}>`);
+      const rawHeading = hm[2].replace(/[*_`]/g, '').trim();
+      const headingSlug = rawHeading.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `sec-${i}`;
+      out.push(`<h${lvl} id="${escapeHtml(headingSlug)}" class="md-h${lvl}">${inlineFormat(hm[2])}</h${lvl}>`);
       i++; continue;
     }
 
@@ -428,7 +455,7 @@ function parseMarkdown(md) {
   
   // Handle unclosed blocks
   if (inCodeBlock && codeContent.length > 0) {
-    out.push(`<pre class="md-code-block"><code>${escapeHtml(codeContent.join("\n"))}</code></pre>`);
+    out.push(renderCodeBlockHtml(codeContent.join("\n"), codeLang));
   }
   if (inMathBlock && mathContent.length > 0) {
     out.push(renderDisplayMath(mathContent.join("\n")));
@@ -440,7 +467,31 @@ function parseMarkdown(md) {
 // ─────────────────────────────────────────────
 //  Component
 // ─────────────────────────────────────────────
-export function MarkdownPreview({ content }) {
+export function MarkdownPreview({ content, className = '' }) {
   const html = useMemo(() => parseMarkdown(content), [content]);
-  return <div className="md-preview" dangerouslySetInnerHTML={{ __html: html }} />;
+
+  const handleClick = (e) => {
+    const copyBtn = e.target.closest('.md-code-copy-btn');
+    if (copyBtn) {
+      e.stopPropagation();
+      const code = decodeURIComponent(copyBtn.getAttribute('data-code') || '');
+      if (code) {
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(code);
+        }
+        copyBtn.textContent = '✓ Copied';
+        setTimeout(() => {
+          copyBtn.textContent = 'Copy';
+        }, 2000);
+      }
+    }
+  };
+
+  return (
+    <div
+      className={`md-preview ${className}`}
+      onClick={handleClick}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }

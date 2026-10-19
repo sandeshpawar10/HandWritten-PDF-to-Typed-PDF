@@ -1,20 +1,28 @@
 import { useState } from 'react';
-import { FileText, FileImage, ChevronRight, Trash2, Table2, BookOpen } from 'lucide-react';
+import { FileText, FileImage, ChevronRight, Table2, BookOpen } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { deleteDocument } from '../services/documents';
 import { toast } from './Toast';
+import { DeleteButton } from './rare';
+import { addNotification } from '../lib/notifications';
 
 export function DocumentList({ documents, onSelect }) {
   const [sortBy, setSortBy] = useState('date');
 
-  const handleDelete = async (e, id) => {
-    e.stopPropagation();
+  const handleDelete = async (id, title) => {
     try {
       await deleteDocument(id);
+      addNotification({
+        title: 'Document deleted',
+        message: `"${title || 'Untitled Document'}" was removed.`,
+        type: 'info'
+      });
+      toast.success('Document deleted');
     } catch (err) {
       console.error('Delete document error:', err);
       toast.error('Failed to delete document');
+      throw err;
     }
   };
 
@@ -116,14 +124,11 @@ export function DocumentList({ documents, onSelect }) {
                   >
                     <TypeIcon className="w-6 h-6 text-[#8B5E3C]" />
                   </motion.div>
-                  <motion.button
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={e => handleDelete(e, doc.id)}
-                    className="p-2.5 rounded-xl text-[#8C7B6B] hover:text-red-500 hover:bg-red-50 border border-transparent hover:border-red-200 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all shadow-sm hover:shadow-md"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </motion.button>
+                  <DeleteButton
+                    onConfirm={() => handleDelete(doc.id, doc.title)}
+                    aria-label={`Delete ${doc.title || 'document'}`}
+                    className="opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
                 </div>
 
                 <h4 className="font-serif font-black text-xl text-[#3D2E1C] mb-3 truncate pr-2 group-hover:text-[#8B5E3C] transition-colors">
