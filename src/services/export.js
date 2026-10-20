@@ -5,11 +5,7 @@ import {
   BorderStyle, AlignmentType
 } from 'docx';
 import { auth } from '../lib/firebase.js';
-
-const API_BASE = (import.meta.env.VITE_API_URL !== undefined && import.meta.env.VITE_API_URL !== '')
-  ? import.meta.env.VITE_API_URL
-  : (import.meta.env.PROD ? "https://typeddoc.onrender.com" : "");
-const RENDER_PDF_URL = API_BASE ? `${API_BASE}/api/v1/render/pdf` : '/api/v1/render/pdf';
+import { RENDER_PDF_URL } from '../lib/apiConfig.js';
 
 
 // ── Markdown parser helpers ──

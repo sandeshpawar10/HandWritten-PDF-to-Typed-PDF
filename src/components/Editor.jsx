@@ -24,7 +24,22 @@ export function Editor({ doc, onBack, versions }) {
   const [isExporting, setIsExporting] = useState(null); // tracks which format is exporting
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [pdfPageMode, setPdfPageMode] = useState('clean-reflow'); // 'clean-reflow' | 'faithful'
+  const [pdfPageMode, setPdfPageMode] = useState(() => {
+    try {
+      return localStorage.getItem('typeddoc_pdf_page_mode') || 'clean-reflow';
+    } catch {
+      return 'clean-reflow';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('typeddoc_pdf_page_mode', pdfPageMode);
+    } catch {
+      // ignore storage error
+    }
+  }, [pdfPageMode]);
+
   // Issue #10: Replace confirm() with proper modal
   const [restoreVersion, setRestoreVersion] = useState(null);
   const [manualTaskOverrides, setManualTaskOverrides] = useState({});
@@ -467,7 +482,7 @@ export function Editor({ doc, onBack, versions }) {
             </button>
             <div className="flex flex-col min-w-0 flex-1">
               <input type="text" value={title} onChange={e => { setTitle(e.target.value); setIsDirty(true); }}
-                className="text-lg sm:text-xl font-serif font-black text-[#3D2E1C] bg-transparent border-none focus:ring-0 p-0 truncate focus:outline-none tracking-tight w-full" placeholder="Untitled Document" />
+                className="text-lg sm:text-xl font-serif font-black text-[#3D2E1C] bg-transparent border-none focus:ring-0 p-0 truncate focus:outline-none tracking-tight w-full max-w-[150px] xs:max-w-[200px] sm:max-w-none" placeholder="Untitled Document" />
               <div className="flex items-center gap-2 mt-0.5">
                 <AnimatedBadge isDirty={isDirty} saveSuccess={saveSuccess} />
                 {lastSaved && !isDirty && (
@@ -505,7 +520,12 @@ export function Editor({ doc, onBack, versions }) {
             </div>
 
             <button onClick={handleSave} disabled={isSaving || !isDirty}
-              className={cn("shrink-0 bg-[#8B5E3C] text-white hover:bg-[#7A5133] rounded-xl font-medium transition-colors flex items-center justify-center py-2 px-4 h-[38px] sm:h-11", !isDirty && "opacity-50 grayscale cursor-not-allowed")}>
+              className={cn(
+                "shrink-0 rounded-xl font-medium transition-colors flex items-center justify-center py-2 px-4 h-[38px] sm:h-11",
+                !isDirty
+                  ? "opacity-60 cursor-not-allowed bg-[#8C7B6B] text-white/90"
+                  : "bg-[#8B5E3C] text-white hover:bg-[#7A5133]"
+              )}>
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : saveSuccess ? <Check className="w-4 h-4 sm:mr-2" /> : <Save className="w-4 h-4 sm:mr-2" />}
               <span className="hidden sm:inline">{isSaving ? 'Saving' : 'Sync'}</span>
             </button>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import {
   Plus, LogOut, Search, Files, Sparkles, User, ArrowRight,
@@ -13,13 +13,17 @@ import { DocumentList } from './components/DocumentList';
 import { Editor } from './components/Editor';
 import { OfflineBanner } from './components/OfflineBanner';
 import { ToastContainer, toast } from './components/Toast';
-import { FormattedDocumentViewer } from './components/FormattedDocumentViewer';
 import { NotificationBell, FAQDrawer, AnimatedCounter } from './components/rare';
 import { setNotificationUserId } from './lib/notifications';
 
+// Lazy-load FormattedDocumentViewer to keep initial bundle size lean
+const FormattedDocumentViewer = lazy(() => import('./components/FormattedDocumentViewer'));
 
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { TypedDocOpeningAnimation, OPENING_SEEN_KEY } from './components/brand/TypedDocOpeningAnimation';
+import { TypedDocMark } from './components/brand/TypedDocMark';
+import { TypedDocLogo } from './components/brand/TypedDocLogo';
 
 // Issue #18: Extract magic numbers to named constants
 const SEARCH_DEBOUNCE_MS = 300;
@@ -27,8 +31,16 @@ const JOB_DELAY_MS = 2000; // Delay between processing multiple files
 const SEARCH_MIN_LENGTH = 3; // Minimum search query length for content search
 
 export default function App() {
-  const [user, loading] = useAuthState(auth);
+  const [user, loading, authErrorFromHook] = useAuthState(auth);
+  const [showOpening, setShowOpening] = useState(() => {
+    try {
+      return !sessionStorage.getItem(OPENING_SEEN_KEY);
+    } catch {
+      return false;
+    }
+  });
   const [documents, setDocuments] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(true);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [versions, setVersions] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -41,6 +53,8 @@ export default function App() {
   const [formattedDocument, setFormattedDocument] = useState(null);
   const [processingProgress, setProcessingProgress] = useState(null);
   const [showFaq, setShowFaq] = useState(false);
+
+  const displayedAuthError = authError || authErrorFromHook?.message;
 
   const handleSignIn = async () => {
     setAuthError(null);
@@ -61,8 +75,22 @@ export default function App() {
   useEffect(() => {
     setNotificationUserId(user?.uid || null);
     if (user) {
-      const unsubscribe = subscribeToDocuments(user.uid, setDocuments);
+      setDocsLoading(true);
+      const unsubscribe = subscribeToDocuments(
+        user.uid,
+        (docs) => {
+          setDocuments(docs);
+          setDocsLoading(false);
+        },
+        (err) => {
+          console.error('Failed to load documents:', err);
+          setDocsLoading(false);
+        }
+      );
       return unsubscribe;
+    } else {
+      setDocuments([]);
+      setDocsLoading(false);
     }
   }, [user]);
 
@@ -226,6 +254,10 @@ export default function App() {
     });
   }, [documents, debouncedSearch]);
 
+  if (showOpening) {
+    return <TypedDocOpeningAnimation onComplete={() => setShowOpening(false)} />;
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#F5F0E8] relative">
@@ -233,7 +265,7 @@ export default function App() {
         <div className="flex flex-col items-center gap-6 relative z-10">
           <div className="relative w-20 h-20 flex items-center justify-center">
             <div className="absolute inset-0 rounded-2xl bg-[#8B5E3C] opacity-10 animate-pulse" />
-            <BookOpen className="w-8 h-8 text-[#8B5E3C] animate-[spin_3s_linear_infinite]" />
+            <TypedDocMark size={36} glow className="animate-pulse" />
           </div>
           <p className="text-[#8B5E3C] font-serif font-bold text-lg">Loading your workspace...</p>
         </div>
@@ -268,9 +300,9 @@ export default function App() {
             className="flex items-center gap-3"
           >
             <div className="w-11 h-11 rounded-2xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-105 magnetic">
-              <BookOpen className="w-5 h-5 text-[#8B5E3C]" />
+              <TypedDocMark size={24} glow />
             </div>
-            <span className="font-serif font-black text-2xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">TypedDoc</span>
+            <TypedDocLogo variant="wordmark" markSize={20} />
           </motion.div>
           <motion.button
             initial={{ opacity: 0, x: 20 }}
@@ -333,6 +365,22 @@ export default function App() {
               </span>
             </motion.button>
 
+            {/* Brand Transformation Showcase */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.7, duration: 0.8 }}
+              className="mt-12 max-w-sm sm:max-w-md mx-auto p-4 rounded-3xl bg-white/75 backdrop-blur-md border border-[#E8DFD0] shadow-xl hover:shadow-2xl transition-all"
+            >
+              <img
+                src="/brand/logo-full.jpg"
+                alt="TypedDoc transformation — Handwritten notes to clean typed documents"
+                className="w-full h-auto rounded-2xl object-contain drop-shadow-xs"
+                width={480}
+                height={480}
+              />
+            </motion.div>
+
             {/* Feature badges with staggered animation */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -362,13 +410,14 @@ export default function App() {
           </motion.div>
         </main>
 
-        {authError && (
+        {displayedAuthError && (
           <motion.div
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
-            className="fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-4 rounded-2xl bg-red-50/90 backdrop-blur-sm border border-red-200 text-red-700 text-sm font-medium shadow-lg max-w-md"
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-4 rounded-2xl bg-red-50/90 backdrop-blur-sm border border-red-200 text-red-700 text-sm font-medium shadow-lg max-w-md flex items-center gap-3 z-50"
           >
-            {authError}
+            <AlertTriangle className="w-5 h-5 shrink-0 text-red-600" />
+            <span>{displayedAuthError}</span>
           </motion.div>
         )}
       </div>
@@ -403,9 +452,9 @@ export default function App() {
         className="h-24 px-8 flex items-center gap-3"
       >
         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/10 to-[#C4853C]/10 border border-[#8B5E3C]/20 flex items-center justify-center shadow-sm hover:shadow-md transition-all hover:scale-105 magnetic">
-          <BookOpen className="w-5 h-5 text-[#8B5E3C]" />
+          <TypedDocMark size={22} glow />
         </div>
-        <span className="font-serif font-black text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">TypedDoc</span>
+        <TypedDocLogo variant="wordmark" markSize={18} />
         <div className="ml-auto flex items-center gap-1.5">
           <NotificationBell
             userId={user?.uid}
@@ -547,7 +596,12 @@ export default function App() {
                 <AnimatePresence mode="wait">
                   {view === 'list' ? (
                     <motion.div key="list" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}>
-                      <DocumentList documents={filteredDocuments} onSelect={doc => { setSelectedDoc(doc); setView('edit'); }} />
+                      <DocumentList
+                        documents={filteredDocuments}
+                        loading={docsLoading}
+                        onSelect={doc => { setSelectedDoc(doc); setView('edit'); }}
+                        onUploadClick={() => setView('upload')}
+                      />
                     </motion.div>
                   ) : (
                     <motion.div key="upload" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}>
@@ -576,13 +630,15 @@ export default function App() {
 
       {/* Formatted Document Viewer Modal */}
       {formattedDocument && (
-        <FormattedDocumentViewer
-          formattedPdf={formattedDocument.pdf}
-          formattedDocx={formattedDocument.docx}
-          content={formattedDocument.content}
-          filename={formattedDocument.filename}
-          onClose={() => setFormattedDocument(null)}
-        />
+        <Suspense fallback={null}>
+          <FormattedDocumentViewer
+            formattedPdf={formattedDocument.pdf}
+            formattedDocx={formattedDocument.docx}
+            content={formattedDocument.content}
+            filename={formattedDocument.filename}
+            onClose={() => setFormattedDocument(null)}
+          />
+        </Suspense>
       )}
 
       {/* Rare UI FAQ & Help Drawer */}

@@ -3,12 +3,7 @@
  */
 
 import { auth } from '../lib/firebase.js';
-
-// API Configuration
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD
-  ? "https://typeddoc.onrender.com"
-  : "http://localhost:3001");
-const FORMATTED_OCR_URL = `${API_BASE}/api/v1/ocr/formatted`;
+import { FORMATTED_OCR_URL } from '../lib/apiConfig.js';
 
 // File size limits
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB

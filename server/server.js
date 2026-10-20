@@ -20,6 +20,18 @@ if (missingVars.length > 0) {
   console.warn('   The app will use default values, but production deployments should set these.');
 }
 
+// Check for Gemini API key configuration
+const hasGeminiKey = Boolean(
+  (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() && process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here') ||
+  Array.from({ length: 20 }, (_, i) => process.env[`GEMINI_KEY_${String(i + 1).padStart(2, '0')}`])
+    .some(k => k && k.trim() && k !== 'your_gemini_api_key_here')
+);
+
+if (!hasGeminiKey) {
+  console.warn('⚠️  Warning: No Gemini API keys found in environment (GEMINI_API_KEY or GEMINI_KEY_01..20).');
+  console.warn('   Server-side OCR endpoints will require valid keys to process documents.');
+}
+
 // CORS Configuration - supports dynamic origins via environment variables
 const getAllowedOrigins = () => {
   // Production origins (always include these)
@@ -44,17 +56,31 @@ const getAllowedOrigins = () => {
     origins.push(
       'http://localhost:3000',
       'http://127.0.0.1:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
       'http://localhost:5173', // Vite default
       'http://127.0.0.1:5173'
     );
   }
 
-  console.log('✓ CORS allowed origins:', origins);
   return origins;
 };
 
 const corsOptions = {
-  origin: getAllowedOrigins(),
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    const allowed = getAllowedOrigins();
+    if (allowed.includes(origin)) return callback(null, true);
+
+    // In development mode, allow local network IPs for mobile testing (e.g. http://192.168.x.x:3000)
+    if (process.env.NODE_ENV !== 'production') {
+      const isLocalNetwork = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
+      if (isLocalNetwork) return callback(null, true);
+    }
+
+    callback(new Error(`CORS origin not allowed: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']

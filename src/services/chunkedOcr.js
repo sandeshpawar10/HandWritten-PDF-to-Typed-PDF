@@ -5,12 +5,7 @@
 
 import { auth } from '../lib/firebase.js';
 import { clientSideOcr } from './clientOcr.js';
-
-// API Configuration
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD
-  ? "https://typeddoc.onrender.com"
-  : "http://localhost:3001");
-const CHUNKED_OCR_URL = `${API_BASE}/api/v1/ocr/chunked`;
+import { CHUNKED_OCR_URL } from '../lib/apiConfig.js';
 
 // File size limits
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB (increased for large PDFs)
@@ -98,7 +93,8 @@ export async function convertToFormattedDocumentChunked(file, onProgress, extern
         ...lastProgress,
         message: `Connection refreshed. Resuming from saved pages (attempt ${attempt}/${MAX_RECONNECTS})...`
       });
-      await sleep(2000 * attempt);
+      const backoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 15000);
+      await sleep(backoffMs);
     }
 
     const token = await auth.currentUser.getIdToken();

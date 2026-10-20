@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { FileText, FileImage, ChevronRight, Table2, BookOpen } from 'lucide-react';
+import { FileText, FileImage, ChevronRight, Table2, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { deleteDocument } from '../services/documents';
 import { toast } from './Toast';
 import { DeleteButton } from './rare';
 import { addNotification } from '../lib/notifications';
+import { TypedDocMark } from './brand/TypedDocMark';
 
-export function DocumentList({ documents, onSelect }) {
+export function DocumentList({ documents, onSelect, loading = false, onUploadClick }) {
   const [sortBy, setSortBy] = useState('date');
 
   const handleDelete = async (id, title) => {
@@ -25,6 +26,29 @@ export function DocumentList({ documents, onSelect }) {
       throw err;
     }
   };
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {[1, 2, 3].map((n) => (
+          <div key={n} className="glass-card p-6 animate-pulse">
+            <div className="flex items-start justify-between mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-[#E8DFD0]/60" />
+            </div>
+            <div className="h-6 bg-[#E8DFD0]/60 rounded-lg w-3/4 mb-3" />
+            <div className="space-y-2 mb-6">
+              <div className="h-3.5 bg-[#E8DFD0]/40 rounded w-full" />
+              <div className="h-3.5 bg-[#E8DFD0]/40 rounded w-4/5" />
+            </div>
+            <div className="pt-4 border-t border-[#E8DFD0]/50 flex items-center justify-between">
+              <div className="h-4 bg-[#E8DFD0]/40 rounded w-1/3" />
+              <div className="h-4 bg-[#E8DFD0]/40 rounded w-1/4" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   const sorted = [...documents].sort((a, b) => {
     switch (sortBy) {
@@ -50,13 +74,24 @@ export function DocumentList({ documents, onSelect }) {
           transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
           className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-white/80 to-[#FFFBF5]/80 backdrop-blur-sm border border-[#E8DFD0] flex items-center justify-center mb-8 shadow-lg"
         >
-          <BookOpen className="w-10 h-10 text-[#8B5E3C]" />
+          <TypedDocMark size={44} glow />
           <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-[#8B5E3C]/0 to-[#8B5E3C]/10" />
         </motion.div>
         <h3 className="text-2xl font-serif font-black text-[#3D2E1C] mb-3">No documents yet</h3>
-        <p className="text-sm text-[#8C7B6B] max-w-xs font-medium leading-relaxed">
+        <p className="text-sm text-[#8C7B6B] max-w-xs font-medium leading-relaxed mb-6">
           Upload your handwritten notes to get started and see them transform into beautiful typed documents.
         </p>
+        {onUploadClick && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onUploadClick}
+            className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold shadow-md hover:shadow-lg transition-all inline-flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Upload Your First Document
+          </motion.button>
+        )}
       </motion.div>
     );
   }

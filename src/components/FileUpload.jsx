@@ -143,35 +143,58 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
           </AnimatePresence>
 
           <div className="relative z-10 flex flex-col items-center">
-            <motion.div
-              animate={isDragActive ? { scale: 1.3, rotate: 15, y: -5 } : { scale: 1, rotate: 0, y: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className={cn(
-                "w-16 h-16 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl flex items-center justify-center mb-5 sm:mb-8 relative",
-                isDragActive
-                  ? "bg-white border-2 border-[#C4853C] shadow-2xl"
-                  : "bg-gradient-to-br from-white to-[#FFFBF5] border border-[#E8DFD0] group-hover:border-[#C4853C]/40 shadow-lg group-hover:shadow-xl",
-                "transition-all duration-500"
-              )}
-            >
-              <Upload className={cn(
-                "w-7 h-7 sm:w-9 sm:h-9 transition-all duration-500",
-                isDragActive ? "text-[#8B5E3C] scale-110" : "text-[#8C7B6B] group-hover:text-[#8B5E3C] group-hover:scale-110"
-              )} />
-              {!isDragActive && (
-                <motion.div
-                  animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-                  transition={{ duration: 3, repeat: Infinity }}
-                  className="absolute inset-0 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-[#8B5E3C]/0 to-[#8B5E3C]/10"
-                />
-              )}
-            </motion.div>
+            {/* Interactive Transformation Visual */}
+            <div className="flex items-center justify-center gap-3 mb-5 sm:mb-8 select-none">
+              {/* Handwritten note preview */}
+              <motion.div
+                animate={isDragActive ? { x: -8, rotate: -6, scale: 1.05 } : { x: 0, rotate: -2, scale: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className="w-12 h-16 sm:w-14 sm:h-18 rounded-lg bg-[#F6EEDF] border border-[#DECFB5] shadow-md p-2 flex flex-col justify-between"
+              >
+                <div className="space-y-1 mt-0.5">
+                  <div className="h-1 w-full bg-[#3D2E1C]/60 rounded-full" />
+                  <div className="h-1 w-4/5 bg-[#3D2E1C]/50 rounded-full" />
+                  <div className="h-1 w-2/3 bg-[#3D2E1C]/40 rounded-full" />
+                </div>
+                <div className="text-[7px] font-mono text-[#9C8A76] uppercase">Note</div>
+              </motion.div>
+
+              {/* Transformation arrow with amber glow */}
+              <motion.div
+                animate={isDragActive ? { scale: 1.25, rotate: 5 } : { scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className="relative flex items-center justify-center text-[#C4853C]"
+              >
+                <svg width="32" height="24" viewBox="0 0 32 24" fill="none" className="overflow-visible">
+                  <path
+                    d="M 4 18 C 6 10, 16 8, 26 10 L 22 6 L 30 11 L 22 16 L 24 12 C 16 11, 8 13, 6 20 Z"
+                    fill={isDragActive ? "#D99A4A" : "#C4853C"}
+                    className={isDragActive ? "drop-shadow-[0_2px_8px_rgba(217,154,74,0.6)]" : ""}
+                  />
+                </svg>
+              </motion.div>
+
+              {/* Typed document preview */}
+              <motion.div
+                animate={isDragActive ? { x: 8, rotate: 2, scale: 1.08 } : { x: 0, rotate: 0, scale: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className="w-12 h-16 sm:w-14 sm:h-18 rounded-lg bg-white border border-[#E8DFD0] shadow-md p-2 flex flex-col justify-between relative overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-3 h-3 bg-[#F5F0E8] border-b border-l border-[#DECBB4] rotate-45" />
+                <div className="space-y-1 mt-0.5">
+                  <div className="h-1 w-1/2 bg-[#C4853C] rounded-full" />
+                  <div className="h-1 w-full bg-[#5C4B3C]/80 rounded-full" />
+                  <div className="h-1 w-3/4 bg-[#8C7B6B]/70 rounded-full" />
+                </div>
+                <div className="text-[7px] font-bold text-[#8B5E3C]">Typed</div>
+              </motion.div>
+            </div>
 
             <motion.h3
               animate={isDragActive ? { scale: 1.05 } : { scale: 1 }}
               className="text-xl sm:text-2xl font-display font-black text-[#3D2E1C] mb-2 sm:mb-3"
             >
-              {isDragActive ? "Drop to convert" : "Drop your handwritten notes"}
+              {isDragActive ? "Release to transform" : "Drop your handwritten notes"}
             </motion.h3>
             <p className="text-xs sm:text-sm text-[#8C7B6B] max-w-sm font-medium leading-relaxed">
               Supports PDF and image files (max {MAX_FILE_SIZE_MB} MB per file)

@@ -95,7 +95,7 @@ export function ChunkedProgressBar({ progress }) {
       >
         <div
           className={cn(
-            "absolute inset-0 bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out flex items-center justify-center",
+            "absolute inset-0 bg-gradient-to-r from-blue-500 to-blue-600 transition-[width] duration-300 ease-out flex items-center justify-center",
             visualPercent === 6 && "animate-pulse"
           )}
           style={{ width: `${visualPercent}%` }}

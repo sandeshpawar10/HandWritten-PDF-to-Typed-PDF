@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="td-doc-grad" x1="6" y1="3" x2="26" y2="29" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D99A4A" />
+      <stop offset="100%" stop-color="#B6732B" />
+    </linearGradient>
+    <filter id="td-shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1" flood-color="#3D2E1C" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Main document body -->
+  <path
+    d="M7.5 3h12.5l6 6v18c0 1.38-1.12 2.5-2.5 2.5H7.5C6.12 29.5 5 28.38 5 27V5.5C5 4.12 6.12 3 7.5 3z"
+    fill="url(#td-doc-grad)"
+    filter="url(#td-shadow)"
+  />
+
+  <!-- Folded corner tab -->
+  <path
+    d="M20 3v5c0 .83.67 1.5 1.5 1.5h4.5L20 3z"
+    fill="#FFFBF5"
+    opacity="0.95"
+  />
+
+  <!-- Document horizontal lines representing typed text -->
+  <rect x="9.5" y="13" width="13" height="2.2" rx="1.1" fill="#FFFBF5" />
+  <rect x="9.5" y="17.5" width="13" height="2.2" rx="1.1" fill="#FFFBF5" />
+  <rect x="9.5" y="22" width="8.5" height="2.2" rx="1.1" fill="#FFFBF5" />
+</svg>

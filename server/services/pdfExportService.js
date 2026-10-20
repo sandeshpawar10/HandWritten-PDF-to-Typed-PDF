@@ -736,8 +736,14 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
         const rowHeight = 20;
         const headerRow = block.rows[0];
 
-        // Ensure at least space for header and first row
-        ensureSpace(rowHeight * 2 + 6);
+        // Keep-together logic: if table is small (<= 5 rows), attempt to keep entire table on current page
+        const fullTableHeight = block.rows.length * rowHeight + 14;
+        if (block.rows.length <= 5) {
+          ensureSpace(fullTableHeight);
+        } else {
+          // For larger tables, ensure at least space for header and initial rows
+          ensureSpace(rowHeight * 3 + 6);
+        }
 
         // Helper to draw a single table row
         const drawTableRow = (row, isHeader) => {
@@ -755,7 +761,7 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
           }
 
           for (let cIdx = 0; cIdx < numCols; cIdx++) {
-            const cellText = row[cIdx] || '';
+            const cellText = sanitizeTextForPdf(row[cIdx] || '');
             const cellLines = wrapText(cellText, cellFont, cellSize, colWidth - 8);
 
             currentPage.drawRectangle({

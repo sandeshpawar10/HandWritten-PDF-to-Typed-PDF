@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import DOMPurify from 'dompurify';
 import { CodeBlock } from './rare/CodeBlock';
 
 
@@ -560,7 +561,7 @@ export function MarkdownPreview({ content, className = '' }) {
         return (
           <div
             key={`html-${idx}`}
-            dangerouslySetInnerHTML={{ __html: block.html }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(block.html) }}
           />
         );
       })}

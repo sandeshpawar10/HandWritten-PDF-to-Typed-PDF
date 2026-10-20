@@ -106,7 +106,8 @@ export function FormattedDocumentViewer({ formattedPdf, formattedDocx, content =
               }`}
             >
               <span className="flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5" /> PDF View
+                <FileText className="w-3.5 h-3.5" />
+                <span>PDF<span className="hidden sm:inline"> View</span></span>
               </span>
             </button>
             <button
@@ -116,7 +117,8 @@ export function FormattedDocumentViewer({ formattedPdf, formattedDocx, content =
               }`}
             >
               <span className="flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5" /> Reading View
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>Reading<span className="hidden sm:inline"> View</span></span>
               </span>
             </button>
           </div>
@@ -236,3 +238,6 @@ FormattedDocumentViewer.propTypes = {
   filename: PropTypes.string,
   onClose: PropTypes.func
 };
+
+export default FormattedDocumentViewer;
+
