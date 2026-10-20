@@ -27,12 +27,273 @@ const COLOR_MATH_BG = rgb(0.97, 0.98, 1.0);
 const COLOR_BORDER = rgb(0.85, 0.85, 0.88);
 const COLOR_TH_BG = rgb(0.92, 0.94, 0.97);
 
+// 27 characters in Windows-1252 range 0x80-0x9F supported by pdf-lib StandardFonts WinAnsi
+const WIN_1252_EXTRA = new Set([
+  0x20AC, // €
+  0x201A, // ‚
+  0x0192, // ƒ
+  0x201E, // „
+  0x2026, // …
+  0x2020, // †
+  0x2021, // ‡
+  0x02C6, // ˆ
+  0x2030, // ‰
+  0x0160, // Š
+  0x2039, // ‹
+  0x0152, // Œ
+  0x017D, // Ž
+  0x2018, // ‘
+  0x2019, // ’
+  0x201C, // “
+  0x201D, // ”
+  0x2022, // •
+  0x2013, // –
+  0x2014, // —
+  0x02DC, // ˜
+  0x2122, // ™
+  0x0161, // š
+  0x203A, // ›
+  0x0153, // œ
+  0x017E, // ž
+  0x0178  // Ÿ
+]);
+
+/**
+ * Checks if a Unicode code point is natively encodable by pdf-lib StandardFonts with WinAnsi.
+ */
+export function isWinAnsiEncodable(cp) {
+  if (cp === 0x09 || cp === 0x0A || cp === 0x0D) return true;
+  if (cp >= 0x20 && cp <= 0x7E) return true;
+  if (cp >= 0xA0 && cp <= 0xFF) return true;
+  return WIN_1252_EXTRA.has(cp);
+}
+
+// Transliteration dictionary for mathematical, algorithmic, Greek, and Unicode symbols
+const TRANSLITERATION_MAP = {
+  // Arrows (common in algorithm assignment & graph representations)
+  '\u2190': '<-',   // ←
+  '\u27F5': '<-',   // ⟵
+  '\u2192': '->',   // →
+  '\u27F6': '->',   // ⟶
+  '\u2194': '<->',  // ↔
+  '\u27F7': '<->',  // ⟷
+  '\u21D0': '<=',   // ⇐
+  '\u27F8': '<=',   // ⟸
+  '\u21D2': '=>',   // ⇒
+  '\u27F9': '=>',   // ⟹
+  '\u21D4': '<=>',  // ⇔
+  '\u27FA': '<=>',  // ⟺
+  '\u2191': '^',    // ↑
+  '\u2193': 'v',    // ↓
+  '\u21A6': '|->',  // ↦
+
+  // Comparison & Equality
+  '\u2264': '<=',   // ≤
+  '\u2A7D': '<=',   // ⩽
+  '\u2265': '>=',   // ≥
+  '\u2A7E': '>=',   // ⩾
+  '\u2260': '!=',   // ≠
+  '\u2248': '~=',   // ≈
+  '\u2243': '~=',   // ≃
+  '\u2245': '~=',   // ≅
+  '\u2261': '==',   // ≡
+  '\u226A': '<<',   // ≪
+  '\u226B': '>>',   // ≫
+  '\u226E': '!<',   // ≮
+  '\u226F': '!>',   // ≯
+
+  // Set Theory & Logic
+  '\u2208': ' in ',        // ∈
+  '\u2209': ' not in ',    // ∉
+  '\u2282': ' subset of ', // ⊂
+  '\u2286': ' subset/eq ', // ⊆
+  '\u2284': ' not subset ',// ⊄
+  '\u2287': ' superset/eq ',// ⊇
+  '\u2283': ' superset of ',// ⊃
+  '\u222A': ' U ',         // ∪
+  '\u2229': ' intersect ', // ∩
+  '\u2205': 'O/',          // ∅
+  '\u2200': 'for all ',    // ∀
+  '\u2203': 'exists ',     // ∃
+  '\u2204': 'does not exist ', // ∄
+  '\u2227': ' AND ',       // ∧
+  '\u2228': ' OR ',        // ∨
+  '\u2295': ' XOR ',       // ⊕
+  '\u2297': ' (x) ',       // ⊗
+  '\u22A2': '|-',          // ⊢
+  '\u22A8': '|=',          // ⊨
+
+  // Calculus & Operators
+  '\u2211': 'SUM',         // ∑
+  '\u220F': 'PROD',        // ∏
+  '\u221A': 'sqrt',        // √
+  '\u221B': 'cbrt',        // ∛
+  '\u221C': '4thrt',       // ∜
+  '\u221E': 'infinity',    // ∞
+  '\u222B': 'integral',    // ∫
+  '\u222C': 'double-integral', // ∬
+  '\u222D': 'triple-integral', // ∭
+  '\u222E': 'contour-integral', // ∮
+  '\u2202': 'd',           // ∂
+  '\u2207': 'del',         // ∇
+  '\u22C5': '*',           // ⋅ (dot operator)
+  '\u2218': 'o',           // ∘ (composition)
+  '\u22A5': '_|_',         // ⊥ (perpendicular)
+  '\u2220': 'angle',       // ∠
+  '\u2206': 'Delta',       // ∆ (laplace / increment)
+
+  // Greek Alphabet (Lower)
+  '\u03B1': 'alpha',   // α
+  '\u03B2': 'beta',    // β
+  '\u03B3': 'gamma',   // γ
+  '\u03B4': 'delta',   // δ
+  '\u03B5': 'epsilon', // ε
+  '\u03F5': 'epsilon', // ϵ
+  '\u03B6': 'zeta',    // ζ
+  '\u03B7': 'eta',     // η
+  '\u03B8': 'theta',   // θ
+  '\u03D1': 'theta',   // ϑ
+  '\u03B9': 'iota',    // ι
+  '\u03BA': 'kappa',   // κ
+  '\u03BB': 'lambda',  // λ
+  '\u03BC': 'mu',      // μ
+  '\u03BD': 'nu',      // ν
+  '\u03BE': 'xi',      // ξ
+  '\u03BF': 'o',       // ο
+  '\u03C0': 'pi',      // π
+  '\u03C1': 'rho',     // ρ
+  '\u03C3': 'sigma',   // σ
+  '\u03C2': 'sigma',   // ς
+  '\u03C4': 'tau',     // τ
+  '\u03C5': 'upsilon', // υ
+  '\u03C6': 'phi',     // φ
+  '\u03D5': 'phi',     // ϕ
+  '\u03C7': 'chi',     // χ
+  '\u03C8': 'psi',     // ψ
+  '\u03C9': 'omega',   // ω
+
+  // Greek Alphabet (Upper)
+  '\u0393': 'Gamma',   // Γ
+  '\u0394': 'Delta',   // Δ
+  '\u0398': 'Theta',   // Θ
+  '\u039B': 'Lambda',  // Λ
+  '\u039E': 'Xi',      // Ξ
+  '\u03A0': 'Pi',      // Π
+  '\u03A3': 'Sigma',   // Σ
+  '\u03A5': 'Upsilon', // Υ
+  '\u03A6': 'Phi',     // Φ
+  '\u03A8': 'Psi',     // Ψ
+  '\u03A9': 'Omega',   // Ω
+
+  // Subscripts
+  '\u2080': '0', '\u2081': '1', '\u2082': '2', '\u2083': '3', '\u2084': '4',
+  '\u2085': '5', '\u2086': '6', '\u2087': '7', '\u2088': '8', '\u2089': '9',
+  '\u208A': '+', '\u208B': '-', '\u208C': '=', '\u208D': '(', '\u208E': ')',
+  '\u1D62': 'i', '\u2C7C': 'j', '\u2096': 'k', '\u2098': 'm', '\u2099': 'n', '\u209A': 'p',
+
+  // Superscripts
+  '\u2070': '^0', '\u00B9': '^1', '\u00B2': '^2', '\u00B3': '^3', '\u2074': '^4',
+  '\u2075': '^5', '\u2076': '^6', '\u2077': '^7', '\u2078': '^8', '\u2079': '^9',
+  '\u207A': '^+', '\u207B': '^-', '\u207C': '^=', '\u207D': '^(', '\u207E': '^)',
+  '\u207F': '^n', '\u2071': '^i',
+
+  // Miscellaneous Typography & Symbols
+  '\u2713': '[v]',    // ✓
+  '\u2714': '[v]',    // ✔
+  '\u2715': '[x]',    // ✕
+  '\u2717': '[x]',    // ✗
+  '\u2605': '*',      // ★
+  '\u2606': '*',      // ☆
+  '\u2023': '•',      // ‣
+  '\u2043': '•',      // ⁃
+  '\u25E6': '•',      // ◦
+  '\u201B': "'",      // ‛
+  '\u201F': '"',      // ‟
+  '\u2012': '-',      // ‒ figure dash
+  '\u2015': '--',     // ― horizontal bar
+
+  // Invisible / Zero-width characters
+  '\u200B': '',       // zero width space
+  '\u200C': '',       // zero width non-joiner
+  '\u200D': '',       // zero width joiner
+  '\uFEFF': '',       // zero width no-break space (BOM)
+  '\u00A0': ' ',      // non-breaking space
+  '\u202F': ' ',      // narrow no-break space
+  '\u2000': ' ',      // en quad
+  '\u2001': ' ',      // em quad
+  '\u2002': ' ',      // en space
+  '\u2003': ' ',      // em space
+  '\u2004': ' ',      // three-per-em space
+  '\u2005': ' ',      // four-per-em space
+  '\u2006': ' ',      // six-per-em space
+  '\u2007': ' ',      // figure space
+  '\u2008': ' ',      // punctuation space
+  '\u2009': ' ',      // thin space
+  '\u200A': ' '       // hair space
+};
+
+const TRANSLITERATION_REGEX = new RegExp(
+  Object.keys(TRANSLITERATION_MAP)
+    .sort((a, b) => b.length - a.length)
+    .map(k => k.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'))
+    .join('|'),
+  'g'
+);
+
+/**
+ * Sanitizes any input string so it can be safely measured and drawn using pdf-lib standard fonts.
+ * Transliterates mathematical arrows, Greek characters, and math symbols, then enforces strict
+ * WinAnsi boundaries so WinAnsi cannot throw an encoding error.
+ * 
+ * @param {string} text - Raw input text (markdown, headings, code, tables, titles)
+ * @returns {string} - Clean, safe string containing only WinAnsi encodable characters
+ */
+export function sanitizeTextForPdf(text) {
+  if (text == null) return '';
+  const str = String(text);
+  if (!str) return '';
+
+  let replaced = str.replace(TRANSLITERATION_REGEX, match => TRANSLITERATION_MAP[match]);
+
+  try {
+    replaced = replaced.normalize('NFKD');
+  } catch {
+    // ignore
+  }
+
+  let isClean = true;
+  for (let i = 0; i < replaced.length; i++) {
+    const cp = replaced.codePointAt(i);
+    if (!isWinAnsiEncodable(cp)) {
+      isClean = false;
+      break;
+    }
+    if (cp > 0xFFFF) i++; // surrogate pair
+  }
+
+  if (isClean) return replaced;
+
+  let result = '';
+  for (let i = 0; i < replaced.length; i++) {
+    const cp = replaced.codePointAt(i);
+    if (isWinAnsiEncodable(cp)) {
+      result += String.fromCodePoint(cp);
+    } else {
+      result += ' ';
+    }
+    if (cp > 0xFFFF) i++;
+  }
+
+  return result;
+}
+
 /**
  * Split text into lines that fit within maxWidth using the given font and fontSize.
  */
 export function wrapText(text, font, fontSize, maxWidth) {
   if (!text) return [''];
-  const words = text.split(/\s+/);
+  const safeText = sanitizeTextForPdf(text);
+  const words = safeText.split(/\s+/);
   const lines = [];
   let currentLine = '';
 
@@ -286,9 +547,10 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
   }
 
   // Draw Document Title on Page 1
-  if (title) {
+  const safeDocTitle = sanitizeTextForPdf(title || 'TypedDoc Document');
+  if (safeDocTitle) {
     ensureSpace(45);
-    currentPage.drawText(title, {
+    currentPage.drawText(safeDocTitle, {
       x: MARGIN_LEFT,
       y: cursorY - 20,
       size: compactTypography ? 18 : 20,
@@ -308,7 +570,8 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
   }
 
   for (const block of blocks) {
-    switch (block.type) {
+    try {
+      switch (block.type) {
       case 'heading': {
         const size = block.level === 1 ? 14 : block.level === 2 ? 12.5 : 11.5;
         const spacingBefore = block.level === 1 ? 14 : block.level === 2 ? 10 : 8;
@@ -706,7 +969,29 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
       default:
         break;
     }
+  } catch (blockErr) {
+    console.warn(`[pdfExportService] Block render warning for ${block.type}:`, blockErr.message);
+    try {
+      if (block.text) {
+        const stripped = block.text.replace(/[^\x20-\x7E\n\r\t]/g, ' ');
+        const safeLines = wrapText(stripped, fontRegular, bodySize, CONTENT_WIDTH);
+        ensureSpace(safeLines.length * bodyLineHeight + 4);
+        for (const sl of safeLines) {
+          currentPage.drawText(sl, {
+            x: MARGIN_LEFT,
+            y: cursorY - bodySize,
+            size: bodySize,
+            font: fontRegular,
+            color: COLOR_BLACK
+          });
+          cursorY -= bodyLineHeight;
+        }
+      }
+    } catch {
+      // Safe skip on recovery failure
+    }
   }
+}
 
   // Draw Header and Running Page Numbers (Page X of Y)
   const totalPages = docPages.length;
@@ -735,8 +1020,8 @@ export async function createPdfBuffer(title, markdownContent, options = {}) {
     });
 
     // Running Header (pages > 1)
-    if (pIdx > 0 && title) {
-      page.drawText(title, {
+    if (pIdx > 0 && safeDocTitle) {
+      page.drawText(safeDocTitle, {
         x: MARGIN_LEFT,
         y: PAGE_HEIGHT - 28,
         size: 8,

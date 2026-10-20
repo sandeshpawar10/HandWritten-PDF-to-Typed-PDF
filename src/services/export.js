@@ -310,6 +310,114 @@ export const exportToDocx = async (title, content) => {
  * Request real server-generated PDF with embedded metadata and academic typography.
  * Strictly downloads the authentic server binary (*_formatted.pdf).
  */
+// 27 characters in Windows-1252 range 0x80-0x9F supported by pdf-lib StandardFonts WinAnsi
+const WIN_1252_EXTRA = new Set([
+  0x20AC, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
+  0x2030, 0x0160, 0x2039, 0x0152, 0x017D, 0x2018, 0x2019, 0x201C,
+  0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A,
+  0x0153, 0x017E, 0x0178
+]);
+
+export function isWinAnsiEncodable(cp) {
+  if (cp === 0x09 || cp === 0x0A || cp === 0x0D) return true;
+  if (cp >= 0x20 && cp <= 0x7E) return true;
+  if (cp >= 0xA0 && cp <= 0xFF) return true;
+  return WIN_1252_EXTRA.has(cp);
+}
+
+const TRANSLITERATION_MAP = {
+  '\u2190': '<-', '\u27F5': '<-', '\u2192': '->', '\u27F6': '->',
+  '\u2194': '<->', '\u27F7': '<->', '\u21D0': '<=', '\u27F8': '<=',
+  '\u21D2': '=>', '\u27F9': '=>', '\u21D4': '<=>', '\u27FA': '<=>',
+  '\u2191': '^', '\u2193': 'v', '\u21A6': '|->',
+  '\u2264': '<=', '\u2A7D': '<=', '\u2265': '>=', '\u2A7E': '>=',
+  '\u2260': '!=', '\u2248': '~=', '\u2243': '~=', '\u2245': '~=',
+  '\u2261': '==', '\u226A': '<<', '\u226B': '>>', '\u226E': '!<', '\u226F': '!>',
+  '\u2208': ' in ', '\u2209': ' not in ', '\u2282': ' subset of ',
+  '\u2286': ' subset/eq ', '\u2284': ' not subset ', '\u2287': ' superset/eq ',
+  '\u2283': ' superset of ', '\u222A': ' U ', '\u2229': ' intersect ',
+  '\u2205': 'O/', '\u2200': 'for all ', '\u2203': 'exists ',
+  '\u2204': 'does not exist ', '\u2227': ' AND ', '\u2228': ' OR ',
+  '\u2295': ' XOR ', '\u2297': ' (x) ', '\u22A2': '|-', '\u22A8': '|=',
+  '\u2211': 'SUM', '\u220F': 'PROD', '\u221A': 'sqrt', '\u221B': 'cbrt',
+  '\u221C': '4thrt', '\u221E': 'infinity', '\u222B': 'integral',
+  '\u222C': 'double-integral', '\u222D': 'triple-integral', '\u222E': 'contour-integral',
+  '\u2202': 'd', '\u2207': 'del', '\u22C5': '*', '\u2218': 'o', '\u22A5': '_|_',
+  '\u2220': 'angle', '\u2206': 'Delta',
+  '\u03B1': 'alpha', '\u03B2': 'beta', '\u03B3': 'gamma', '\u03B4': 'delta',
+  '\u03B5': 'epsilon', '\u03F5': 'epsilon', '\u03B6': 'zeta', '\u03B7': 'eta',
+  '\u03B8': 'theta', '\u03D1': 'theta', '\u03B9': 'iota', '\u03BA': 'kappa',
+  '\u03BB': 'lambda', '\u03BC': 'mu', '\u03BD': 'nu', '\u03BE': 'xi',
+  '\u03BF': 'o', '\u03C0': 'pi', '\u03C1': 'rho', '\u03C3': 'sigma',
+  '\u03C2': 'sigma', '\u03C4': 'tau', '\u03C5': 'upsilon', '\u03C6': 'phi',
+  '\u03D5': 'phi', '\u03C7': 'chi', '\u03C8': 'psi', '\u03C9': 'omega',
+  '\u0393': 'Gamma', '\u0394': 'Delta', '\u0398': 'Theta', '\u039B': 'Lambda',
+  '\u039E': 'Xi', '\u03A0': 'Pi', '\u03A3': 'Sigma', '\u03A5': 'Upsilon',
+  '\u03A6': 'Phi', '\u03A8': 'Psi', '\u03A9': 'Omega',
+  '\u2080': '0', '\u2081': '1', '\u2082': '2', '\u2083': '3', '\u2084': '4',
+  '\u2085': '5', '\u2086': '6', '\u2087': '7', '\u2088': '8', '\u2089': '9',
+  '\u208A': '+', '\u208B': '-', '\u208C': '=', '\u208D': '(', '\u208E': ')',
+  '\u1D62': 'i', '\u2C7C': 'j', '\u2096': 'k', '\u2098': 'm', '\u2099': 'n', '\u209A': 'p',
+  '\u2070': '^0', '\u00B9': '^1', '\u00B2': '^2', '\u00B3': '^3', '\u2074': '^4',
+  '\u2075': '^5', '\u2076': '^6', '\u2077': '^7', '\u2078': '^8', '\u2079': '^9',
+  '\u207A': '^+', '\u207B': '^-', '\u207C': '^=', '\u207D': '^(', '\u207E': '^)',
+  '\u207F': '^n', '\u2071': '^i',
+  '\u2713': '[v]', '\u2714': '[v]', '\u2715': '[x]', '\u2717': '[x]',
+  '\u2605': '*', '\u2606': '*', '\u2023': '•', '\u2043': '•', '\u25E6': '•',
+  '\u201B': "'", '\u201F': '"', '\u2012': '-', '\u2015': '--',
+  '\u200B': '', '\u200C': '', '\u200D': '', '\uFEFF': '',
+  '\u00A0': ' ', '\u202F': ' ', '\u2000': ' ', '\u2001': ' ', '\u2002': ' ',
+  '\u2003': ' ', '\u2004': ' ', '\u2005': ' ', '\u2006': ' ', '\u2007': ' ',
+  '\u2008': ' ', '\u2009': ' ', '\u200A': ' '
+};
+
+const TRANSLITERATION_REGEX = new RegExp(
+  Object.keys(TRANSLITERATION_MAP)
+    .sort((a, b) => b.length - a.length)
+    .map(k => k.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'))
+    .join('|'),
+  'g'
+);
+
+export function sanitizeTextForPdf(text) {
+  if (text == null) return '';
+  const str = String(text);
+  if (!str) return '';
+
+  let replaced = str.replace(TRANSLITERATION_REGEX, match => TRANSLITERATION_MAP[match]);
+
+  try {
+    replaced = replaced.normalize('NFKD');
+  } catch {
+    // ignore
+  }
+
+  let isClean = true;
+  for (let i = 0; i < replaced.length; i++) {
+    const cp = replaced.codePointAt(i);
+    if (!isWinAnsiEncodable(cp)) {
+      isClean = false;
+      break;
+    }
+    if (cp > 0xFFFF) i++;
+  }
+
+  if (isClean) return replaced;
+
+  let result = '';
+  for (let i = 0; i < replaced.length; i++) {
+    const cp = replaced.codePointAt(i);
+    if (isWinAnsiEncodable(cp)) {
+      result += String.fromCodePoint(cp);
+    } else {
+      result += ' ';
+    }
+    if (cp > 0xFFFF) i++;
+  }
+
+  return result;
+}
+
 /**
  * Client-side PDF fallback generator using pdf-lib.
  * Activated when server endpoints are offline or unreachable.
@@ -317,7 +425,8 @@ export const exportToDocx = async (title, content) => {
 export async function generateClientPdf(title, content, options = {}) {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const pdfDoc = await PDFDocument.create();
-  pdfDoc.setTitle(title || 'TypedDoc Document');
+  const cleanTitle = sanitizeTextForPdf((title || 'Document').trim());
+  pdfDoc.setTitle(cleanTitle || 'TypedDoc Document');
   pdfDoc.setCreator('TypedDoc Client Engine');
   pdfDoc.setProducer('pdf-lib');
 
@@ -348,7 +457,6 @@ export async function generateClientPdf(title, content, options = {}) {
   };
 
   // Draw Title
-  const cleanTitle = (title || 'Document').trim();
   page.drawText(cleanTitle, {
     x: MARGIN_X,
     y: cursorY - 14,
@@ -393,24 +501,24 @@ export async function generateClientPdf(title, content, options = {}) {
     let lineHeight = 14;
     let color = rgb(0.15, 0.15, 0.15);
 
-    let textToDraw = trimmed;
+    let textToDraw = sanitizeTextForPdf(trimmed);
     if (isH1) {
       fontSize = 14;
       currentFont = boldFont;
       lineHeight = 18;
-      textToDraw = trimmed.replace(/^#\s+/, '');
+      textToDraw = sanitizeTextForPdf(trimmed.replace(/^#\s+/, ''));
       cursorY -= 8;
     } else if (isH2) {
       fontSize = 12;
       currentFont = boldFont;
       lineHeight = 16;
-      textToDraw = trimmed.replace(/^##\s+/, '');
+      textToDraw = sanitizeTextForPdf(trimmed.replace(/^##\s+/, ''));
       cursorY -= 6;
     } else if (isH3) {
       fontSize = 11;
       currentFont = boldFont;
       lineHeight = 15;
-      textToDraw = trimmed.replace(/^###\s+/, '');
+      textToDraw = sanitizeTextForPdf(trimmed.replace(/^###\s+/, ''));
       cursorY -= 4;
     }
 
