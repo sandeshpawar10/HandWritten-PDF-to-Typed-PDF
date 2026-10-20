@@ -4,15 +4,16 @@ import { TypedDocMark } from './TypedDocMark';
 /**
  * TypedDocLogo
  * Component providing standard brand lockups:
- * - 'wordmark': "Typed" + Document Mark as 'D' + "oc"
- * - 'horizontal': Document Mark + "TypedDoc" text
- * - 'full': The complete transformation illustration with master asset
+ * - 'horizontal': Brand Mark + "TypedDoc" (with full 'D')
+ * - 'wordmark': "TypedDoc" text styled with gradient
+ * - 'mark': Standalone Brand Mark
+ * - 'full': The brand logo graphic
  */
 export function TypedDocLogo({
-  variant = 'wordmark',
+  variant = 'horizontal',
   className = '',
-  markSize = 28,
-  imageWidth = 420,
+  markSize = 26,
+  imageWidth = 240,
   glow = false,
   ...props
 }) {
@@ -24,9 +25,9 @@ export function TypedDocLogo({
     return (
       <div className={`relative inline-flex flex-col items-center select-none ${className}`} {...props}>
         <img
-          src="/brand/logo-full.jpg"
-          alt="TypedDoc — Transform handwritten notes into beautiful typed documents"
-          className="w-full h-auto object-contain drop-shadow-md rounded-2xl"
+          src="/brand/brand-mark.png"
+          alt="TypedDoc Logo"
+          className="w-full h-auto object-contain drop-shadow-md"
           style={{ maxWidth: imageWidth }}
           loading="lazy"
         />
@@ -34,32 +35,28 @@ export function TypedDocLogo({
     );
   }
 
-  if (variant === 'horizontal') {
+  if (variant === 'wordmark') {
     return (
-      <div className={`inline-flex items-center gap-2.5 select-none ${className}`} {...props}>
-        <TypedDocMark size={markSize} glow={glow} />
-        <span className="font-serif font-black text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] via-[#5C3D24] to-[#8B5E3C]">
-          TypedDoc
-        </span>
-      </div>
+      <span
+        className={`font-serif font-black text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] via-[#5C3D24] to-[#8B5E3C] select-none ${className}`}
+        aria-label="TypedDoc"
+        {...props}
+      >
+        TypedDoc
+      </span>
     );
   }
 
-  // Default: 'wordmark' with stylized "D" document glyph
+  // Default: 'horizontal' lockup with Brand Mark on the left and "TypedDoc" with 'D' on the right
   return (
     <div
-      className={`inline-flex items-baseline select-none ${className}`}
+      className={`inline-flex items-center gap-2.5 select-none ${className}`}
       aria-label="TypedDoc"
       {...props}
     >
-      <span className="font-display font-black text-2xl tracking-tight text-[#3D2E1C]">
-        Typed
-      </span>
-      <span className="inline-flex items-center self-center mx-0.5 translate-y-[2px]">
-        <TypedDocMark size={markSize || 22} glow={glow} />
-      </span>
-      <span className="font-display font-black text-2xl tracking-tight text-[#3D2E1C]">
-        oc
+      <TypedDocMark size={markSize} glow={glow} />
+      <span className="font-serif font-black text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] via-[#5C3D24] to-[#8B5E3C]">
+        TypedDoc
       </span>
     </div>
   );

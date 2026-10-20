@@ -87,13 +87,9 @@ export function TypedDocOpeningAnimation({ onComplete }) {
               // Reduced motion: Clean, static brand lockup
               <div className="flex flex-col items-center gap-4">
                 <TypedDocMark size={64} glow />
-                <div className="flex items-baseline font-display font-black text-4xl text-[#3D2E1C] tracking-tight">
-                  <span>Typed</span>
-                  <span className="mx-1 translate-y-1">
-                    <TypedDocMark size={32} />
-                  </span>
-                  <span>oc</span>
-                </div>
+                <h1 className="font-serif font-black text-4xl text-[#3D2E1C] tracking-tight">
+                  TypedDoc
+                </h1>
                 <p className="text-sm font-medium text-[#8C7B6B]">
                   Handwritten to Typed Documents
                 </p>
@@ -271,23 +267,23 @@ export function TypedDocOpeningAnimation({ onComplete }) {
                   </motion.div>
                 </div>
 
-                {/* Beat 5: Wordmark assembles below */}
+                {/* Beat 5: Brand Mark & Wordmark assembles below */}
                 <motion.div
-                  className="mt-6 flex items-baseline font-display font-black text-3xl sm:text-4xl text-[#3D2E1C] tracking-tight"
+                  className="mt-6 flex items-center gap-3 select-none"
                   initial={{ opacity: 0, y: 14, filter: 'blur(4px)' }}
                   animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                   transition={{ delay: 1.45, duration: 0.45, ease: 'easeOut' }}
                 >
-                  <span>Typed</span>
-                  <motion.span
-                    className="inline-flex items-center self-center mx-1 translate-y-1"
-                    initial={{ scale: 0.8, rotate: -15 }}
+                  <motion.div
+                    initial={{ scale: 0.8, rotate: -10 }}
                     animate={{ scale: 1, rotate: 0 }}
-                    transition={{ delay: 1.55, duration: 0.35, type: 'spring', bounce: 0.4 }}
+                    transition={{ delay: 1.5, duration: 0.35, type: 'spring', bounce: 0.4 }}
                   >
-                    <TypedDocMark size={32} glow />
-                  </motion.span>
-                  <span>oc</span>
+                    <TypedDocMark size={34} glow />
+                  </motion.div>
+                  <span className="font-serif font-black text-3xl sm:text-4xl text-[#3D2E1C] tracking-tight">
+                    TypedDoc
+                  </span>
                 </motion.div>
 
                 {/* Subtitle crossfade */}

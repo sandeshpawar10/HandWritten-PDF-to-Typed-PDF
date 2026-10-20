@@ -2,24 +2,37 @@ import React from 'react';
 
 /**
  * TypedDocMark
- * The standalone folded document mark from the TypedDoc brand identity.
- * Features the signature amber folded page with crisp typed line indicators.
+ * The standalone folded document brand logo.
+ * Features the signature golden-amber sheet (#C8873B) with folded top-right corner
+ * and three crisp white rounded bars.
  */
 export function TypedDocMark({
   className = 'w-6 h-6',
   size,
   variant = 'brand', // 'brand' | 'white' | 'dark' | 'monochrome'
   glow = false,
+  asImage = false,
   ...props
 }) {
   const dimensionProps = size ? { width: size, height: size } : {};
 
-  // Gradient ID unique enough for multiple instances
+  if (asImage) {
+    return (
+      <img
+        src="/brand/brand-mark.png"
+        alt="TypedDoc Logo"
+        className={`object-contain shrink-0 select-none ${glow ? 'drop-shadow-[0_4px_12px_rgba(200,135,59,0.4)]' : ''} ${className}`}
+        style={size ? { width: size, height: size } : undefined}
+        {...props}
+      />
+    );
+  }
+
   const gradId = React.useId();
 
   return (
     <div
-      className={`relative inline-flex items-center justify-center shrink-0 ${glow ? 'drop-shadow-[0_4px_12px_rgba(196,133,60,0.35)]' : ''}`}
+      className={`relative inline-flex items-center justify-center shrink-0 select-none ${glow ? 'drop-shadow-[0_4px_12px_rgba(200,135,59,0.35)]' : ''}`}
       style={size ? { width: size, height: size } : undefined}
     >
       <svg
@@ -31,25 +44,15 @@ export function TypedDocMark({
         {...props}
       >
         <defs>
-          <linearGradient id={`${gradId}-amber`} x1="4" y1="3" x2="28" y2="29" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#E2A654" />
-            <stop offset="50%" stopColor="#C4853C" />
-            <stop offset="100%" stopColor="#9C5E24" />
+          <linearGradient id={`${gradId}-amber`} x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#D49347" />
+            <stop offset="100%" stopColor="#BF7E32" />
           </linearGradient>
-
-          <linearGradient id={`${gradId}-fold`} x1="20" y1="3" x2="26" y2="9" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#FFFBF5" />
-            <stop offset="100%" stopColor="#EAD8C3" />
-          </linearGradient>
-
-          <filter id={`${gradId}-shadow`} x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" floodColor="#3D2E1C" floodOpacity="0.22" />
-          </filter>
         </defs>
 
-        {/* Base document body with folded top-right corner */}
+        {/* Base document body with rounded corners and folded corner cutout */}
         <path
-          d="M7 3 h13.5 l6.5 6.5 v17 c0 1.66-1.34 3-3 3 H7 c-1.66 0-3-1.34-3-3 V6 c0-1.66 1.34-3 3-3 z"
+          d="M7 2.5 h12 l7.5 7.5 v15 c0 2.5-2 4.5-4.5 4.5 H7 c-2.5 0-4.5-2-4.5-4.5 V7 c0-2.5 2-4.5 4.5-4.5 z"
           fill={
             variant === 'white'
               ? '#FFFFFF'
@@ -59,43 +62,42 @@ export function TypedDocMark({
               ? 'currentColor'
               : `url(#${gradId}-amber)`
           }
-          filter={`url(#${gradId}-shadow)`}
         />
 
-        {/* Folded corner tab with soft back shadow */}
+        {/* Top-right folded flap */}
         <path
-          d="M20.5 3 v4.5 c0 1.1.9 2 2 2 h4.5 L20.5 3 z"
-          fill={`url(#${gradId}-fold)`}
-          opacity="0.95"
+          d="M19 2.5 v5 c0 1.4 1.1 2.5 2.5 2.5 h5 L19 2.5 z"
+          fill={variant === 'white' ? '#F5E6D3' : '#FFFFFF'}
+          opacity="0.98"
         />
 
-        {/* Document horizontal lines (typed text) */}
+        {/* Three white rounded text bars */}
+        {/* Line 1: Wide */}
         <rect
-          x="9"
-          y="12"
-          width="14"
-          height="2.2"
-          rx="1.1"
-          fill={variant === 'white' ? '#8B5E3C' : '#FFFBF5'}
-          opacity="0.95"
+          x="8.5"
+          y="13.5"
+          width="13.5"
+          height="2.7"
+          rx="1.35"
+          fill={variant === 'white' ? '#8B5E3C' : '#FFFFFF'}
         />
+        {/* Line 2: Wide */}
         <rect
-          x="9"
-          y="16.5"
-          width="14"
-          height="2.2"
-          rx="1.1"
-          fill={variant === 'white' ? '#8B5E3C' : '#FFFBF5'}
-          opacity="0.9"
+          x="8.5"
+          y="18.2"
+          width="13.5"
+          height="2.7"
+          rx="1.35"
+          fill={variant === 'white' ? '#8B5E3C' : '#FFFFFF'}
         />
+        {/* Line 3: Short (left-aligned) */}
         <rect
-          x="9"
-          y="21"
-          width="9.5"
-          height="2.2"
-          rx="1.1"
-          fill={variant === 'white' ? '#8B5E3C' : '#FFFBF5'}
-          opacity="0.9"
+          x="8.5"
+          y="22.9"
+          width="7.5"
+          height="2.7"
+          rx="1.35"
+          fill={variant === 'white' ? '#8B5E3C' : '#FFFFFF'}
         />
       </svg>
     </div>

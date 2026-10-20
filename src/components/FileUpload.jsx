@@ -174,19 +174,17 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
                 </svg>
               </motion.div>
 
-              {/* Typed document preview */}
+              {/* Brand typed document preview */}
               <motion.div
                 animate={isDragActive ? { x: 8, rotate: 2, scale: 1.08 } : { x: 0, rotate: 0, scale: 1 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="w-12 h-16 sm:w-14 sm:h-18 rounded-lg bg-white border border-[#E8DFD0] shadow-md p-2 flex flex-col justify-between relative overflow-hidden"
+                className="w-12 h-16 sm:w-14 sm:h-18 rounded-lg flex items-center justify-center relative"
               >
-                <div className="absolute top-0 right-0 w-3 h-3 bg-[#F5F0E8] border-b border-l border-[#DECBB4] rotate-45" />
-                <div className="space-y-1 mt-0.5">
-                  <div className="h-1 w-1/2 bg-[#C4853C] rounded-full" />
-                  <div className="h-1 w-full bg-[#5C4B3C]/80 rounded-full" />
-                  <div className="h-1 w-3/4 bg-[#8C7B6B]/70 rounded-full" />
-                </div>
-                <div className="text-[7px] font-bold text-[#8B5E3C]">Typed</div>
+                <img
+                  src="/brand/brand-mark.png"
+                  alt="TypedDoc Logo"
+                  className="w-full h-full object-contain drop-shadow-md"
+                />
               </motion.div>
             </div>
 

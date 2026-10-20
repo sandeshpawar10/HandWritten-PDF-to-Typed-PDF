@@ -260,14 +260,43 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F5F0E8] relative">
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F0E8] relative overflow-hidden select-none">
         <div className="absolute inset-0 bg-gradient-to-br from-[#F5F0E8] to-[#E8DFD0] pointer-events-none" />
-        <div className="flex flex-col items-center gap-6 relative z-10">
-          <div className="relative w-20 h-20 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-2xl bg-[#8B5E3C] opacity-10 animate-pulse" />
-            <TypedDocMark size={36} glow className="animate-pulse" />
+        <div className="flex flex-col items-center gap-5 relative z-10 p-6 max-w-sm w-full text-center">
+          {/* Brand Logo with gentle breathing motion */}
+          <motion.div
+            animate={{ y: [0, -6, 0] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+            className="relative flex items-center justify-center mb-1"
+          >
+            <div className="w-20 h-20 rounded-3xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] shadow-xl flex items-center justify-center p-3.5">
+              <img
+                src="/brand/brand-mark.png"
+                alt="TypedDoc Logo"
+                className="w-12 h-12 object-contain drop-shadow-sm"
+              />
+            </div>
+            <div className="absolute -inset-3 bg-[#C8873B]/15 rounded-3xl blur-xl -z-10 animate-pulse" />
+          </motion.div>
+
+          <div className="space-y-1">
+            <span className="font-serif font-black text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] via-[#5C3D24] to-[#8B5E3C]">
+              TypedDoc
+            </span>
+            <p className="text-[#8C7B6B] text-xs font-medium tracking-wide">
+              Loading workspace...
+            </p>
           </div>
-          <p className="text-[#8B5E3C] font-serif font-bold text-lg">Loading your workspace...</p>
+
+          {/* Downside Slider */}
+          <div className="w-56 h-1.5 bg-[#E8DFD0] rounded-full overflow-hidden relative shadow-inner mt-2">
+            <motion.div
+              className="absolute top-0 bottom-0 rounded-full bg-gradient-to-r from-[#C8873B] via-[#E2A654] to-[#C8873B]"
+              initial={{ left: '-40%', width: '40%' }}
+              animate={{ left: '100%', width: '40%' }}
+              transition={{ duration: 1.3, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </div>
         </div>
       </div>
     );
@@ -299,10 +328,12 @@ export default function App() {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-3"
           >
-            <div className="w-11 h-11 rounded-2xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-105 magnetic">
-              <TypedDocMark size={24} glow />
+            <div className="w-11 h-11 rounded-2xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-105 magnetic p-2">
+              <img src="/brand/brand-mark.png" alt="TypedDoc Logo" className="w-6 h-6 object-contain" />
             </div>
-            <TypedDocLogo variant="wordmark" markSize={20} />
+            <span className="font-serif font-black text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">
+              TypedDoc
+            </span>
           </motion.div>
           <motion.button
             initial={{ opacity: 0, x: 20 }}
@@ -340,6 +371,25 @@ export default function App() {
               <br className="hidden md:block" /> Notes
             </motion.h1>
 
+            {/* Brand Logo Showcase */}
+            <motion.div
+              initial={{ opacity: 0, y: 25 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5, duration: 0.8 }}
+              className="my-10 max-w-xs mx-auto p-6 rounded-3xl bg-white/80 backdrop-blur-md border border-[#E8DFD0] shadow-xl hover:shadow-2xl transition-all flex flex-col items-center gap-3 select-none"
+            >
+              <img
+                src="/brand/brand-mark.png"
+                alt="TypedDoc Logo"
+                className="w-24 h-auto sm:w-28 object-contain drop-shadow-md hover:scale-105 transition-transform"
+                width={112}
+                height={140}
+              />
+              <span className="font-serif font-black text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">
+                TypedDoc
+              </span>
+            </motion.div>
+
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -366,20 +416,7 @@ export default function App() {
             </motion.button>
 
             {/* Brand Transformation Showcase */}
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7, duration: 0.8 }}
-              className="mt-12 max-w-sm sm:max-w-md mx-auto p-4 rounded-3xl bg-white/75 backdrop-blur-md border border-[#E8DFD0] shadow-xl hover:shadow-2xl transition-all"
-            >
-              <img
-                src="/brand/logo-full.jpg"
-                alt="TypedDoc transformation — Handwritten notes to clean typed documents"
-                className="w-full h-auto rounded-2xl object-contain drop-shadow-xs"
-                width={480}
-                height={480}
-              />
-            </motion.div>
+
 
             {/* Feature badges with staggered animation */}
             <motion.div
@@ -451,10 +488,12 @@ export default function App() {
         animate={{ opacity: 1, y: 0 }}
         className="h-24 px-8 flex items-center gap-3"
       >
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/10 to-[#C4853C]/10 border border-[#8B5E3C]/20 flex items-center justify-center shadow-sm hover:shadow-md transition-all hover:scale-105 magnetic">
-          <TypedDocMark size={22} glow />
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/10 to-[#C4853C]/10 border border-[#8B5E3C]/20 flex items-center justify-center shadow-sm hover:shadow-md transition-all hover:scale-105 magnetic p-1.5">
+          <img src="/brand/brand-mark.png" alt="TypedDoc Logo" className="w-6 h-6 object-contain" />
         </div>
-        <TypedDocLogo variant="wordmark" markSize={18} />
+        <span className="font-serif font-black text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">
+          TypedDoc
+        </span>
         <div className="ml-auto flex items-center gap-1.5">
           <NotificationBell
             userId={user?.uid}

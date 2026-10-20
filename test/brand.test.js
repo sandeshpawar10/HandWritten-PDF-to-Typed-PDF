@@ -32,15 +32,17 @@ describe('Brand Identity & Opening Animation Tests', () => {
 
     const content = fs.readFileSync(faviconPath, 'utf8');
     assert.ok(content.includes('<svg'), 'Favicon must be an SVG element');
-    assert.ok(content.includes('#D99A4A') || content.includes('td-doc-grad'), 'Favicon must use brand amber gradient');
+    assert.ok(content.includes('#C8873B') || content.includes('#D99A4A') || content.includes('td-doc-grad'), 'Favicon must use brand amber');
     assert.ok(content.includes('rect') && content.includes('path'), 'Favicon must render document body and text lines');
   });
 
-  test('public/brand/logo-full.jpg exists and is accessible', () => {
-    const logoPath = path.resolve('public', 'brand', 'logo-full.jpg');
-    assert.ok(fs.existsSync(logoPath), 'public/brand/logo-full.jpg must exist');
-    const stats = fs.statSync(logoPath);
-    assert.ok(stats.size > 10000, 'Logo file size should be substantial for high-DPI displays');
+  test('public/brand/brand-mark.png and logo.png exist and are accessible', () => {
+    const markPath = path.resolve('public', 'brand', 'brand-mark.png');
+    const logoPath = path.resolve('public', 'brand', 'logo.png');
+    assert.ok(fs.existsSync(markPath), 'public/brand/brand-mark.png must exist');
+    assert.ok(fs.existsSync(logoPath), 'public/brand/logo.png must exist');
+    const stats = fs.statSync(markPath);
+    assert.ok(stats.size > 5000, 'Brand mark file size should be substantial for high-DPI displays');
   });
 
   test('index.html links to /favicon.svg and defines brand theme-color', () => {
