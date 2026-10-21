@@ -269,11 +269,11 @@ export default function App() {
             transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
             className="relative flex items-center justify-center mb-1"
           >
-            <div className="w-20 h-20 rounded-3xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] shadow-xl flex items-center justify-center p-3.5">
+            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] shadow-xl flex items-center justify-center p-2.5 overflow-hidden">
               <img
-                src="/brand/brand-mark.png"
+                src="/brand/logo.jpg"
                 alt="TypedDoc Logo"
-                className="w-12 h-12 object-contain drop-shadow-sm"
+                className="w-full h-full object-cover rounded-2xl drop-shadow-xs"
               />
             </div>
             <div className="absolute -inset-3 bg-[#C8873B]/15 rounded-3xl blur-xl -z-10 animate-pulse" />
@@ -328,8 +328,8 @@ export default function App() {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-3"
           >
-            <div className="w-11 h-11 rounded-2xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-105 magnetic p-2">
-              <img src="/brand/brand-mark.png" alt="TypedDoc Logo" className="w-6 h-6 object-contain" />
+            <div className="w-11 h-11 rounded-2xl bg-white/80 backdrop-blur-sm border border-[#E8DFD0] flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-105 magnetic overflow-hidden p-1">
+              <img src="/brand/logo.jpg" alt="TypedDoc Logo" className="w-full h-full object-cover rounded-xl" />
             </div>
             <span className="font-serif font-black text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">
               TypedDoc
@@ -376,16 +376,16 @@ export default function App() {
               initial={{ opacity: 0, y: 25 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5, duration: 0.8 }}
-              className="my-10 max-w-xs mx-auto p-6 rounded-3xl bg-white/80 backdrop-blur-md border border-[#E8DFD0] shadow-xl hover:shadow-2xl transition-all flex flex-col items-center gap-3 select-none"
+              className="my-10 max-w-sm sm:max-w-md mx-auto p-4 rounded-3xl bg-white/85 backdrop-blur-md border border-[#E8DFD0] shadow-xl hover:shadow-2xl transition-all flex flex-col items-center gap-3 select-none"
             >
               <img
-                src="/brand/brand-mark.png"
-                alt="TypedDoc Logo"
-                className="w-24 h-auto sm:w-28 object-contain drop-shadow-md hover:scale-105 transition-transform"
-                width={112}
-                height={140}
+                src="/brand/logo.jpg"
+                alt="TypedDoc Transformation Logo"
+                className="w-48 h-48 sm:w-60 sm:h-60 object-cover rounded-2xl drop-shadow-md hover:scale-105 transition-transform"
+                width={240}
+                height={240}
               />
-              <span className="font-serif font-black text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">
+              <span className="font-serif font-black text-2xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">
                 TypedDoc
               </span>
             </motion.div>
@@ -488,8 +488,8 @@ export default function App() {
         animate={{ opacity: 1, y: 0 }}
         className="h-24 px-8 flex items-center gap-3"
       >
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/10 to-[#C4853C]/10 border border-[#8B5E3C]/20 flex items-center justify-center shadow-sm hover:shadow-md transition-all hover:scale-105 magnetic p-1.5">
-          <img src="/brand/brand-mark.png" alt="TypedDoc Logo" className="w-6 h-6 object-contain" />
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8B5E3C]/10 to-[#C4853C]/10 border border-[#8B5E3C]/20 flex items-center justify-center shadow-sm hover:shadow-md transition-all hover:scale-105 magnetic overflow-hidden p-1">
+          <img src="/brand/logo.jpg" alt="TypedDoc Logo" className="w-full h-full object-cover rounded-xl" />
         </div>
         <span className="font-serif font-black text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#3D2E1C] to-[#8B5E3C]">
           TypedDoc

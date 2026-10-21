@@ -3,17 +3,17 @@ import { TypedDocMark } from './TypedDocMark';
 
 /**
  * TypedDocLogo
- * Component providing standard brand lockups:
- * - 'horizontal': Brand Mark + "TypedDoc" (with full 'D')
- * - 'wordmark': "TypedDoc" text styled with gradient
- * - 'mark': Standalone Brand Mark
- * - 'full': The brand logo graphic
+ * Component providing standard brand lockups with the transformation logo:
+ * - 'horizontal': Transformation Logo Mark + "TypedDoc"
+ * - 'wordmark': "TypedDoc" text styled with editorial gradient
+ * - 'mark': Standalone Transformation Logo Mark
+ * - 'full': Full-size transformation graphic
  */
 export function TypedDocLogo({
   variant = 'horizontal',
   className = '',
-  markSize = 26,
-  imageWidth = 240,
+  markSize = 28,
+  imageWidth = 260,
   glow = false,
   ...props
 }) {
@@ -25,9 +25,9 @@ export function TypedDocLogo({
     return (
       <div className={`relative inline-flex flex-col items-center select-none ${className}`} {...props}>
         <img
-          src="/brand/brand-mark.png"
+          src="/brand/logo.jpg"
           alt="TypedDoc Logo"
-          className="w-full h-auto object-contain drop-shadow-md"
+          className="w-full h-auto object-cover rounded-2xl drop-shadow-md"
           style={{ maxWidth: imageWidth }}
           loading="lazy"
         />
@@ -47,7 +47,7 @@ export function TypedDocLogo({
     );
   }
 
-  // Default: 'horizontal' lockup with Brand Mark on the left and "TypedDoc" with 'D' on the right
+  // Default: 'horizontal' lockup with Brand Mark on the left and "TypedDoc" on the right
   return (
     <div
       className={`inline-flex items-center gap-2.5 select-none ${className}`}

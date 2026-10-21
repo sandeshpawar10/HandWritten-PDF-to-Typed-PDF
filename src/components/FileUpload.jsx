@@ -178,12 +178,12 @@ export function FileUpload({ onFilesAdded, jobs, onRemoveJob, onRetryJob, proces
               <motion.div
                 animate={isDragActive ? { x: 8, rotate: 2, scale: 1.08 } : { x: 0, rotate: 0, scale: 1 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="w-12 h-16 sm:w-14 sm:h-18 rounded-lg flex items-center justify-center relative"
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden flex items-center justify-center relative shadow-sm"
               >
                 <img
-                  src="/brand/brand-mark.png"
+                  src="/brand/logo.jpg"
                   alt="TypedDoc Logo"
-                  className="w-full h-full object-contain drop-shadow-md"
+                  className="w-full h-full object-cover rounded-xl"
                 />
               </motion.div>
             </div>

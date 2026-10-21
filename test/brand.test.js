@@ -36,13 +36,15 @@ describe('Brand Identity & Opening Animation Tests', () => {
     assert.ok(content.includes('rect') && content.includes('path'), 'Favicon must render document body and text lines');
   });
 
-  test('public/brand/brand-mark.png and logo.png exist and are accessible', () => {
+  test('public/brand/logo.jpg, brand-mark.png, and logo.png exist and are accessible', () => {
     const markPath = path.resolve('public', 'brand', 'brand-mark.png');
-    const logoPath = path.resolve('public', 'brand', 'logo.png');
+    const logoPngPath = path.resolve('public', 'brand', 'logo.png');
+    const logoJpgPath = path.resolve('public', 'brand', 'logo.jpg');
     assert.ok(fs.existsSync(markPath), 'public/brand/brand-mark.png must exist');
-    assert.ok(fs.existsSync(logoPath), 'public/brand/logo.png must exist');
-    const stats = fs.statSync(markPath);
-    assert.ok(stats.size > 5000, 'Brand mark file size should be substantial for high-DPI displays');
+    assert.ok(fs.existsSync(logoPngPath), 'public/brand/logo.png must exist');
+    assert.ok(fs.existsSync(logoJpgPath), 'public/brand/logo.jpg must exist');
+    const stats = fs.statSync(logoJpgPath);
+    assert.ok(stats.size > 5000, 'Brand logo file size should be substantial for high-DPI displays');
   });
 
   test('index.html links to /favicon.svg and defines brand theme-color', () => {
