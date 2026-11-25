@@ -116,3 +116,7 @@ npm run build
 
 ## 📄 License
 MIT License.
+
+## Off Campus Verification
+
+Off Campus Code: 8FQGQH
